@@ -7,10 +7,10 @@ import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-st.set_page_config(page_title="Squeeze Wave Dashboard", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Squeeze Wave TradingView", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
 
 st.title("🌀 Squeeze Wave TradingView")
-st.markdown("**Tu propio TradingView privado** — Matemática de ondas + SqueezeIndex + Compresión explosiva")
+st.markdown("**Tu propio TradingView privado** — Matemática de ondas + SqueezeIndex configurable")
 st.caption(f"Última ejecución: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
 @st.cache_data(ttl=3600)
@@ -38,7 +38,7 @@ def fetch_data(ticker, days=730):
         st.error(f"Error al descargar {ticker}: {str(e)[:100]}")
         return pd.DataFrame()
 
-def calculate_squeeze_index(df, window=20, bb_mult=2.0, kc_mult=1.5, atr_period=20, trend_threshold=0.15):
+def calculate_squeeze_index(df, window, bb_mult, kc_mult, atr_period, trend_threshold):
     if df.empty or len(df) < 30:
         return df
     df["EMA"] = df["Close"].ewm(span=window, adjust=False).mean()
@@ -68,6 +68,7 @@ def calculate_squeeze_index(df, window=20, bb_mult=2.0, kc_mult=1.5, atr_period=
     
     df["SqueezeOn"] = (df["UpperBB"] <= df["UpperKC"]) & (df["LowerBB"] >= df["LowerKC"])
     
+    # Trend ultra-reactivo
     df["Trend_slope"] = np.nan
     for i in range(len(df)):
         lam = df["Lambda"].iloc[i] if not np.isnan(df["Lambda"].iloc[i]) else 10
@@ -108,7 +109,7 @@ def calculate_squeeze_index(df, window=20, bb_mult=2.0, kc_mult=1.5, atr_period=
 # ===================== API KEY =====================
 API_KEY = st.secrets["API_KEY"]
 
-# ===================== BARRA LATERAL =====================
+# ===================== BARRA LATERAL CON TODOS LOS PARÁMETROS =====================
 with st.sidebar:
     st.header("🎛️ Control de Ondas")
     assets = {"EURUSD": "C:EURUSD", "Oro (XAUUSD)": "C:XAUUSD", "Plata (XAGUSD)": "C:XAGUSD",
@@ -116,8 +117,17 @@ with st.sidebar:
               "BTCUSD": "X:BTCUSD", "USO (Petróleo)": "USO"}
     selected_asset = st.selectbox("Activo", options=list(assets.keys()))
     ticker = assets[selected_asset]
+    
     days_slider = st.slider("Días de datos (máx free tier)", 30, 730, 365)
     days = st.number_input("O escribe el número exacto de días", min_value=30, max_value=730, value=days_slider, step=1)
+    
+    st.subheader("⚙️ Parámetros del SqueezeIndex")
+    window = st.slider("Window (EMA / BB / Lambda)", 10, 60, 20)
+    bb_mult = st.slider("Bollinger Multiplier", 1.0, 3.5, 2.0, 0.1)
+    kc_mult = st.slider("Keltner Multiplier", 1.0, 3.0, 1.5, 0.1)
+    atr_period = st.slider("ATR Period", 10, 40, 20)
+    trend_threshold = st.slider("Trend Threshold (para SqueezeDetected)", 0.05, 0.40, 0.15, 0.01)
+    
     update_button = st.button("🔄 Actualizar datos y calcular SqueezeIndex", type="primary", use_container_width=True)
 
 # ===================== LÓGICA PRINCIPAL =====================
@@ -125,7 +135,7 @@ if update_button:
     with st.spinner(f"Descargando {selected_asset} ({days} días)..."):
         df_raw = fetch_data(ticker, days)
         if not df_raw.empty:
-            df = calculate_squeeze_index(df_raw.copy())
+            df = calculate_squeeze_index(df_raw.copy(), window, bb_mult, kc_mult, atr_period, trend_threshold)
             
             if len(df) < 30 or 'SqueezeIndex' not in df.columns:
                 st.warning(f"⚠️ Solo {len(df)} velas. Prueba con más días.")
@@ -136,15 +146,14 @@ if update_button:
                 last = df.iloc[-1]
                 col1, col2, col3 = st.columns(3)
                 col1.metric("SqueezeIndex", f"{last['SqueezeIndex']:.2f}")
-                col2.metric("Trend", f"{last['Trend']:.3f} ({last['Direction']})")   # ← CORREGIDO
+                col2.metric("Trend", f"{last['Trend']:.3f} ({last['Direction']})")
                 col3.metric("Estado", "🟢 SqueezeOn" if last['SqueezeOn'] else "🔴 Sin compresión")
                 
-                # Estadísticas matemáticas
+                # Estadísticas
                 squeeze_days = df['SqueezeOn'].sum()
                 detected_days = df['SqueezeDetected'].sum()
                 avg_squeeze = df.loc[df['SqueezeOn'], 'SqueezeIndex'].mean() if squeeze_days > 0 else 0
                 pct_squeeze = (squeeze_days / len(df)) * 100
-                
                 st.subheader("📊 Estadísticas Matemáticas del Squeeze Wave")
                 colA, colB, colC, colD = st.columns(4)
                 colA.metric("Días en compresión", f"{squeeze_days}")
@@ -152,7 +161,7 @@ if update_button:
                 colC.metric("Explosiones detectadas", f"{detected_days}")
                 colD.metric("% tiempo en SqueezeOn", f"{pct_squeeze:.1f}%")
                 
-                # Gráfico (sin cambios)
+                # Gráfico
                 fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.55, 0.25, 0.20],
                                     subplot_titles=("Precio + Bollinger + Keltner + Fondo SqueezeOn",
                                                     "SqueezeIndex (compresión de onda)",
@@ -167,8 +176,7 @@ if update_button:
                 
                 for i in range(len(df)-1):
                     if df['SqueezeOn'].iloc[i]:
-                        fig.add_vrect(x0=df['Date'].iloc[i], x1=df['Date'].iloc[i+1],
-                                      fillcolor="green", opacity=0.18, layer="below", line_width=0, row=1, col=1)
+                        fig.add_vrect(x0=df['Date'].iloc[i], x1=df['Date'].iloc[i+1], fillcolor="green", opacity=0.18, layer="below", line_width=0, row=1, col=1)
                 
                 colors = np.where(df['SqueezeIndex'] > df['SqueezeIndex'].mean()*1.5, 'red', 'orange')
                 fig.add_trace(go.Bar(x=df['Date'], y=df['SqueezeIndex'], marker_color=colors), row=2, col=1)
@@ -186,7 +194,7 @@ if update_button:
                                   title=f"{selected_asset} — Ondas de Compresión y Explosión")
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # EXPANDER CON TODAS LAS DETECCIONES + ACIERTO
+                # Expander con todas las detecciones
                 with st.expander("🔎 Ver TODAS las detecciones SqueezeOn del período completo", expanded=True):
                     squeeze_events = df[df['SqueezeOn'] == True].copy()
                     if not squeeze_events.empty:
@@ -209,6 +217,6 @@ if update_button:
         else:
             st.error("Error de descarga. Revisa tu API_KEY.")
 else:
-    st.info("👈 Elige activo y días → pulsa 'Actualizar datos'")
+    st.info("👈 Ajusta los parámetros en la barra lateral y pulsa 'Actualizar datos'")
 
-st.success("✅ App versión 1.6 corregida — Error de metric resuelto")
+st.success("✅ App versión 1.7 — ¡Todos los parámetros del SqueezeIndex son configurables!")
