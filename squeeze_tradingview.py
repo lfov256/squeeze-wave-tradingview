@@ -4,9 +4,8 @@ import numpy as np
 from scipy.signal import find_peaks
 from datetime import datetime, timedelta, UTC
 import requests
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="Squeeze Wave TradingView", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
 
@@ -69,6 +68,7 @@ def calculate_squeeze_index(df, window, bb_mult, kc_mult, atr_period, trend_thre
     
     df["SqueezeOn"] = (df["UpperBB"] <= df["UpperKC"]) & (df["LowerBB"] >= df["LowerKC"])
     
+    # Trend ultra-reactivo
     df["Trend_slope"] = np.nan
     for i in range(len(df)):
         lam = df["Lambda"].iloc[i] if not np.isnan(df["Lambda"].iloc[i]) else 10
@@ -108,7 +108,6 @@ def calculate_squeeze_index(df, window, bb_mult, kc_mult, atr_period, trend_thre
 
 def send_email_resend(to_email, subject, body):
     RESEND_API_KEY = st.secrets["RESEND_API_KEY"]
-    
     url = "https://api.resend.com/emails"
     headers = {
         "Authorization": f"Bearer {RESEND_API_KEY}",
@@ -120,7 +119,6 @@ def send_email_resend(to_email, subject, body):
         "subject": subject,
         "text": body
     }
-    
     try:
         response = requests.post(url, headers=headers, json=data, timeout=15)
         if response.status_code == 200:
@@ -163,7 +161,6 @@ if update_button:
             
             if len(df) < 30 or 'SqueezeIndex' not in df.columns:
                 st.warning(f"⚠️ Solo {len(df)} velas. Prueba con más días.")
-                st.dataframe(df_raw.tail(10), use_container_width=True)
             else:
                 st.success(f"✅ {selected_asset} cargado: {len(df)} velas | Última: {df['Date'].iloc[-1]}")
                 
@@ -186,7 +183,7 @@ if update_button:
                 colC.metric("Explosiones detectadas", f"{detected_days}")
                 colD.metric("% tiempo en SqueezeOn", f"{pct_squeeze:.1f}%")
                 
-                # Gráfico (sin cambios)
+                # Gráfico
                 fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.55, 0.25, 0.20],
                                     subplot_titles=("Precio + Bollinger + Keltner + Fondo SqueezeOn",
                                                     "SqueezeIndex (compresión de onda)",
@@ -211,7 +208,7 @@ if update_button:
                                                      size=np.where(df['SqueezeDetected'], 8, 4))), row=3, col=1)
                 
                 fig.update_xaxes(title_text="Fecha", showgrid=True, gridcolor="rgba(128,128,128,0.3)")
-                fig.update_yaxes(title_text="Precio", showgrid=True, gridcolor="rgba(128,128,128,0.3)", tickformat=", .2f", row=1, col=1)
+                fig.update_yaxes(title_text="Precio", showgrid=True, gridcolor="rgba(128,128,128,0.3)", tickformat=",.2f", row=1, col=1)
                 fig.update_yaxes(title_text="SqueezeIndex", showgrid=True, gridcolor="rgba(128,128,128,0.3)", row=2, col=1)
                 fig.update_yaxes(title_text="Trend", showgrid=True, gridcolor="rgba(128,128,128,0.3)", row=3, col=1)
                 
@@ -219,6 +216,7 @@ if update_button:
                                   title=f"{selected_asset} — Ondas de Compresión y Explosión")
                 st.plotly_chart(fig, use_container_width=True)
                 
+                # Expander
                 with st.expander("🔎 Ver TODAS las detecciones SqueezeOn del período completo", expanded=True):
                     squeeze_events = df[df['SqueezeOn'] == True].copy()
                     if not squeeze_events.empty:
@@ -238,24 +236,19 @@ if update_button:
                         st.metric("Precisión histórica del Squeeze", f"{precision:.1f}%", f"{aciertos}/{total} aciertos")
                     else:
                         st.info("No se detectaron SqueezeOn en todo el rango.")
-        else:
-            st.error("Error de descarga. Revisa tu API_KEY.")
 
-# ===================== NUEVO: BOTÓN REPORTE EMAIL CON RESEND =====================
+# ===================== BOTÓN EMAIL =====================
 st.divider()
 st.subheader("📧 Enviar Reporte por Email")
-
 user_email = st.text_input("Correo donde quieres recibir el reporte", placeholder="tu@email.com")
 
 if st.button("📤 Enviar Reporte (Solo Detecciones Leve + Fuerte)", type="secondary"):
     if not user_email:
-        st.warning("Por favor, escribe un correo electrónico.")
+        st.warning("Por favor escribe un correo electrónico.")
     else:
-        with st.spinner("Escaneando todos los activos con los parámetros actuales..."):
-            assets = {
-                "EURUSD": "C:EURUSD", "Oro": "C:XAUUSD", "Plata": "C:XAGUSD", "SPY": "SPY",
-                "GBPUSD": "C:GBPUSD", "USDJPY": "C:USDJPY", "BTCUSD": "X:BTCUSD", "USO": "USO"
-            }
+        with st.spinner("Escaneando todos los activos..."):
+            assets = {"EURUSD": "C:EURUSD", "Oro": "C:XAUUSD", "Plata": "C:XAGUSD", "SPY": "SPY",
+                      "GBPUSD": "C:GBPUSD", "USDJPY": "C:USDJPY", "BTCUSD": "X:BTCUSD", "USO": "USO"}
             
             signals = []
             compression = []
@@ -264,13 +257,10 @@ if st.button("📤 Enviar Reporte (Solo Detecciones Leve + Fuerte)", type="secon
                 df_raw = fetch_data(ticker, days)
                 if df_raw.empty or len(df_raw) < 30:
                     continue
-                
                 df = calculate_squeeze_index(df_raw.copy(), window, bb_mult, kc_mult, atr_period, trend_threshold)
                 if len(df) < 30:
                     continue
-                    
                 last = df.iloc[-1]
-                
                 if not (last['SqueezeOn'] or last['SqueezeDetected']):
                     continue
                 
@@ -279,38 +269,30 @@ if st.button("📤 Enviar Reporte (Solo Detecciones Leve + Fuerte)", type="secon
                     "squeeze_index": round(last["SqueezeIndex"], 2),
                     "trend": round(last["Trend"], 4),
                     "direction": last["Direction"],
-                    "price": round(last["Close"], 2),
-                    "ko_call": round(round(last["LowerBB"] / 5) * 5, 2),
-                    "ko_put": round(round(last["UpperBB"] / 5) * 5, 2)
+                    "price": round(last["Close"], 2)
                 }
-                
                 if last['SqueezeDetected']:
                     signals.append(info)
                 elif last['SqueezeOn']:
                     compression.append(info)
             
-            if not signals and not compression:
-                st.info("No hay detecciones leve ni fuerte con los parámetros actuales.")
+            subject = f"Squeeze Report - {datetime.now(UTC).strftime('%Y-%m-%d')}"
+            body = f"Reporte generado: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+            body += f"Parámetros: window={window}, bb_mult={bb_mult}, kc_mult={kc_mult}, threshold={trend_threshold}\n\n"
+            
+            if signals:
+                body += "=== SEÑALES FUERTES ===\n"
+                for a in signals:
+                    body += f"• {a['asset']} | {a['direction']} | SqueezeIndex {a['squeeze_index']} | Trend {a['trend']}\n"
+            if compression:
+                body += "\n=== DETECCIONES LEVES ===\n"
+                for c in compression:
+                    body += f"• {c['asset']} | {c['direction']} | SqueezeIndex {c['squeeze_index']} | Trend {c['trend']}\n"
+            
+            success, msg = send_email_resend(user_email, subject, body)
+            if success:
+                st.success(f"✅ Reporte enviado a {user_email}")
             else:
-                subject = f"Squeeze Report - {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
-                body = f"Reporte generado: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
-                body += f"Parámetros usados: window={window}, bb_mult={bb_mult}, kc_mult={kc_mult}, atr={atr_period}, threshold={trend_threshold}\n\n"
-                
-                if signals:
-                    body += "=== SEÑALES FUERTES ===\n"
-                    for a in signals:
-                        body += f"• {a['asset']} | {a['direction']} | SqueezeIndex: {a['squeeze_index']} | Trend: {a['trend']}\n"
-                
-                if compression:
-                    body += "\n=== DETECCIONES LEVES ===\n"
-                    for c in compression:
-                        body += f"• {c['asset']} | {c['direction']} | SqueezeIndex: {c['squeeze_index']} | Trend: {c['trend']}\n"
-                
-                success, msg = send_email_resend(user_email, subject, body)
-                
-                if success:
-                    st.success(f"✅ Reporte enviado a {user_email}")
-                else:
-                    st.error(msg)
+                st.error(msg)
 
-st.success("✅ App versión 1.8 - Botón de Reporte por Email con Resend añadido")
+st.success("✅ App versión 1.8 corregida - Gráficos y Email funcionando")
