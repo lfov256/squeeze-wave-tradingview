@@ -16,73 +16,100 @@ st.caption(f"Última ejecución: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S 
 tab_dashboard, tab_info = st.tabs(["📈 Dashboard", "🧠 Info"])
 
 with tab_info:
-    # ===================== EXPLICACIÓN INICIAL =====================
-    st.markdown("""
-### ¿Qué es el Squeezeindex?
+   # ===================== EXPLICACIÓN INICIAL =====================
+st.markdown("""
+### ¿Qué es el Squeezeindex? (La matemática de las olas en los mercados)
 
-Imagina que el precio de una acción, del oro, del petróleo o del Bitcoin es como **el mar**.
-A veces hay olas grandes y el agua se mueve mucho. Otras veces el mar se queda **casi plano y en calma total** durante muchos días seguidos.
-A esa calma extrema la llamamos **compresión** o “Squeeze”.
+Imagina que el precio de una acción, del oro, del petróleo o del Bitcoin **es exactamente como el mar**.  
 
-Este modelo:
+A veces hay olas gigantes y el agua se mueve con fuerza (alta volatilidad). Otras veces el mar se queda **completamente plano, en calma total**, durante días o semanas.  
+
+Esa calma extrema es lo que los traders llamamos **compresión** o “Squeeze”.  
+
+En física de olas, cuando el mar se comprime (la energía se acumula sin que se note), después viene una explosión de movimiento.  
+Aquí pasa lo mismo: el precio se “aprieta” como un resorte, acumula energía invisible y, cuando se libera, suele dar un salto fuerte y rápido.
+
+Este modelo (inspirado en las ecuaciones que describen ondas y volatilidad) hace tres cosas muy simples y poderosas:
 1. Detecta cuándo el precio está en una compresión fuerte (el resorte está muy apretado).
-2. Mide cuánta energía se ha acumulado.
+2. Mide cuánta energía se ha acumulado durante esa calma.
 3. Intenta estimar hacia dónde es más probable que salte el precio cuando se libere.
+
+Es como tener un radar de olas antes de que rompan.  
+No predice el futuro con certeza (nadie puede), pero te avisa con cierta objetividad cuándo el mercado está “cargado” y listo para moverse.
 """)
-    with st.expander("📖 Glosario)", expanded=True):
-        st.markdown("""
-    **Conceptos:**
-    - **Compresión (Squeeze)**
-      Cuando el precio deja de moverse fuerte y se queda “encerrado” en un rango muy estrecho durante varios días.
-      *Analogía*: Es como apretar un resorte o contener la respiración. Todo está muy quieto, pero la tensión aumenta.
-      
-    - **SqueezeOn (la luz verde)**
-      Es la señal que dice: “¡En este momento el precio está realmente comprimido!”
-      Aparece como fondo verde en el gráfico principal.
-      *Analogía*: La luz del semáforo que se pone en verde para avisarte que el resorte está muy tenso.
-      
-    - **SqueezeIndex**
-      Nuestro medidor principal de “cuánta tensión hay”.
-      Cuanto **más alto** es el número, más energía se está acumulando.
-      *Analogía*: Es como el velocímetro del resorte: te dice qué tan fuerte está apretado.
-      
-    - **Lambda (Λ)**
-      Mide el “ritmo natural” del precio (cuánto tarda normalmente en hacer una pequeña subida y bajada).
-      *Analogía*: Cada persona camina a su propio paso. Lambda detecta el “paso” de cada activo (el oro camina distinto que el Bitcoin) para que las matemáticas se adapten perfectamente.
-    
-    - **Trend (Tendencia)**
-      Te dice hacia dónde es más probable que salte el precio cuando termine la compresión:
-      - Arriba → **Alcista** (positivo)
-      - Abajo → **Bajista** (negativo)
-      *Analogía*: Es como leer la dirección del viento antes de que llegue la ola grande.
-   
-    - **SqueezeDetected**
-      La **señal más poderosa** del modelo.
-      Se enciende solo cuando hay **mucha compresión + una dirección clara**.
-      Estas son las situaciones que más nos interesan para prestar atención.
-    
-    **Parámetros internos del modelo:**
-   
-    - **Ventana = 20 días**  
-      El modelo mira únicamente los últimos 20 días de precio para hacer sus cálculos.  
-      *Analogía*: Es como tomar una foto reciente del mercado en vez de mirar su historial. Así se enfoca en cómo se está comportando **ahora mismo**.
-    
-    - **Bandas de Bollinger (BB Mult = 2.0)**  
-      Son dos bandas azules que marcan el rango “normal” donde suele moverse el precio.  
-      El número 2.0 decide lo anchas que son. Cuando estas bandas se juntan y se estrechan mucho, significa que el precio está muy calmado y con poca volatilidad.
-    
-    - **Canales de Keltner (KC Mult = 1.5)**  
-      Es como un túnel más estrecho que rodea el precio y usa la volatilidad real.  
-      Cuando las Bandas de Bollinger entran completamente dentro de este túnel → se activa la señal de **SqueezeOn** (compresión fuerte).
-    
-    - **ATR Period = 20**  
-      Mide cuánto se mueve normalmente el precio cada día (es la volatilidad real del activo).  
-      Ayuda al modelo a entender si el precio está más tranquilo o más nervioso de lo habitual.
-    
-    - **Trend Threshold = 0.15**  
-      Es el nivel mínimo de “fuerza de dirección” que necesitamos.  
-      Si el Trend supera este número, decimos “este Squeeze tiene una tendencia clara” y puede saltar con fuerza. Si está por debajo, lo consideramos neutral.
-    """)
+
+with st.expander("📖 Glosario completo (explicado para principiantes)", expanded=True):
+    st.markdown("""
+**Conceptos básicos (para que cualquiera los entienda):**
+
+- **Compresión (Squeeze)**  
+  Es cuando el precio deja de moverse fuerte y se queda “encerrado” en un rango muy estrecho durante varios días.  
+  *Analogía del mar*: El agua está tan plana que parece que no pasa nada… pero la energía se está acumulando debajo.  
+  *Qué pasa si la compresión dura más tiempo*: La liberación posterior suele ser más violenta (mayor movimiento).
+
+- **SqueezeOn (la luz verde)**  
+  Es la señal clara que dice: “¡En este momento el precio está realmente comprimido!”  
+  Aparece como fondo verde en el gráfico principal.  
+  *Analogía*: Es el semáforo en verde que te avisa “el resorte ya está muy tenso, prepárate”.  
+  *Qué pasa si lo ignoras*: Puedes perderte movimientos explosivos que empiezan justo después.
+
+- **SqueezeIndex**  
+  Nuestro medidor principal de “cuánta tensión hay acumulada”.  
+  Cuanto **más alto** es el número, más energía se está guardando para el próximo movimiento.  
+  *Analogía*: Es el velocímetro del resorte. A 80 o 90 ya está muy apretado.  
+  *Qué pasa si el índice es muy alto*: La probabilidad de un movimiento grande aumenta significativamente.
+
+- **Lambda (Λ)**  
+  Mide el “ritmo natural” de ese activo concreto (cuánto tarda normalmente en hacer una pequeña subida y bajada).  
+  *Analogía*: Cada persona camina a su propio paso. El oro camina despacio, el Bitcoin corre. Lambda detecta automáticamente el paso de cada activo para que las matemáticas se adapten perfectamente.  
+  *Qué pasa si lo cambias manualmente*: El modelo pierde precisión porque ya no está calibrado al comportamiento real del precio.
+
+- **Trend (Tendencia)**  
+  Te dice hacia dónde es más probable que salte el precio cuando termine la compresión.  
+  - Número positivo → **Alcista** (probable subida fuerte)  
+  - Número negativo → **Bajista** (probable bajada fuerte)  
+  *Analogía del mar*: Es como leer la dirección del viento antes de que llegue la ola grande.  
+  *Qué pasa si el Trend es cercano a cero*: El salto puede ir en cualquier dirección (más riesgo).
+
+- **SqueezeDetected**  
+  La **señal más poderosa** del modelo.  
+  Se enciende solo cuando hay **mucha compresión + una dirección clara**.  
+  Estas son las situaciones que más nos interesan para prestar atención (o incluso operar).  
+  *Qué pasa cuando se activa*: Estadísticamente, el precio tiende a moverse con fuerza en la dirección del Trend en los días siguientes.
+
+**Parámetros del modelo (y qué pasa si los cambias):**
+
+- **Ventana = 20 días** (por defecto)  
+  El modelo solo mira los últimos 20 días de precio.  
+  *Analogía*: Es como tomar una foto reciente del mar en vez de mirar el historial de años.  
+  *Qué pasa si la subes a 50 días*: Detecta compresiones más largas y “históricas”, pero puede perderse squeezes cortos y rápidos.  
+  *Qué pasa si la bajas a 10 días*: Reacciona más rápido, pero también da más señales falsas (ruido).
+
+- **Bandas de Bollinger (BB Mult = 2.0)**  
+  Son las dos bandas azules que marcan el rango “normal” del precio.  
+  El número 2.0 decide lo anchas que son.  
+  Cuando se juntan mucho → el precio está muy calmado.  
+  *Qué pasa si subes a 2.5*: Las bandas se abren más, detectas menos squeezes (más conservador).  
+  *Qué pasa si bajas a 1.5*: Detectas más squeezes, pero también más falsos (más agresivo).
+
+- **Canales de Keltner (KC Mult = 1.5)**  
+  Es un túnel más estrecho que rodea el precio usando la volatilidad real.  
+  Cuando las Bandas de Bollinger entran completamente dentro de este túnel → se activa **SqueezeOn**.  
+  *Qué pasa si subes a 2.0*: Necesitas una compresión aún más extrema para que se active la señal (más selectivo).  
+  *Qué pasa si bajas a 1.0*: La señal se activa con compresiones más suaves (más señales, pero menos potentes).
+
+- **ATR Period = 20**  
+  Mide cuánto se mueve normalmente el precio cada día (la volatilidad real del activo).  
+  *Analogía*: Es el “termómetro” de nerviosismo del mercado.  
+  *Qué pasa si lo subes a 50*: El modelo se vuelve más lento y solo detecta compresiones muy prolongadas.  
+  *Qué pasa si lo bajas a 10*: Reacciona más rápido a cambios de volatilidad.
+
+- **Trend Threshold = 0.15**  
+  Es el nivel mínimo de “fuerza de dirección” que necesitamos para decir “este Squeeze tiene una tendencia clara”.  
+  *Qué pasa si lo subes a 0.25*: Solo se activan las señales más fuertes y claras (menos señales, pero de mayor calidad).  
+  *Qué pasa si lo bajas a 0.05*: Se activan más señales, incluso las débiles (más oportunidades, pero también más ruido y falsos positivos).
+
+""")
 
 # ===================== API KEY =====================
 API_KEY = st.secrets["API_KEY"]
