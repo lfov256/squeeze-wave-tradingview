@@ -242,20 +242,27 @@ def fetch_data(ticker: str, days: int = 365) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def compute_lambda_vectorized(smoothed: pd.Series, window: int, use_spectrum: bool) -> pd.Series:
+def compute_lambda_vectorized(smoothed, window, use_spectrum):
     n = len(smoothed)
     lambda_arr = np.full(n, np.nan)
     prices_arr = smoothed.values
+
     for i in range(window - 1, n):
         seg = prices_arr[i - window + 1: i + 1]
         if use_spectrum and len(seg) >= 16:
             try:
-                freqs, psd = welch(seg, nperseg=min(len(seg), 8))
-                freqs = freqs[freqs > 0]
-                psd = psd[1:]
-                if len(psd) > 0:
-                    dom_freq = freqs[np.argmax(psd)]
-                    lambda_arr[i] = 1.0 / dom_freq if dom_freq > 0 else window / 2
+                # ✅ FIX: usar len(seg) como nperseg, no 8
+                # Más puntos = más bins de frecuencia = resolución real
+                nperseg = len(seg)  # era: min(len(seg), 8)
+                freqs, psd = welch(seg, nperseg=nperseg)
+                
+                # Ignorar DC (índice 0) y frecuencias muy bajas (< 1/window)
+                # para evitar que ruido lento domine siempre
+                min_freq = 2.0 / window
+                valid = freqs > min_freq
+                if valid.sum() > 1:
+                    dom_freq = freqs[valid][np.argmax(psd[valid])]
+                    lambda_arr[i] = 1.0 / dom_freq
                 else:
                     lambda_arr[i] = window / 2
             except Exception:
@@ -268,6 +275,7 @@ def compute_lambda_vectorized(smoothed: pd.Series, window: int, use_spectrum: bo
                 lambda_arr[i] = float(np.mean(np.diff(extrema)))
             else:
                 lambda_arr[i] = window / 2
+
     lam = pd.Series(lambda_arr, index=smoothed.index)
     return lam.ffill().bfill().clip(lower=2.0)
 
