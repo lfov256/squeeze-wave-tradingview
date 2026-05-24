@@ -7,10 +7,9 @@ import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-st.set_page_config(page_title="Squeeze Wave Dashboard", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Squeezeindex", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
 
 st.title("Squeezeindex")
-st.markdown("**Tu propio TradingView privado** — Matemática de ondas + SqueezeIndex + Compresión explosiva")
 st.caption(f"Última ejecución: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
 # ===================== PESTAÑAS =====================
@@ -20,15 +19,14 @@ with tab_info:
     # ===================== EXPLICACIÓN INICIAL =====================
     st.markdown("""
 ### ¿Qué es el Squeezeindex?
+
 Imagina que el precio de una acción, del oro, del petróleo o del Bitcoin es como **el mar**.
 A veces hay olas grandes y el agua se mueve mucho.
+
 Otras veces el mar se queda **casi plano y en calma total** durante muchos días seguidos.
 A esa calma extrema la llamamos **compresión** o “Squeeze”.
-Es como cuando aprietas un resorte (muelle) con las dos manos:
-- Todo está muy quieto…
-- pero la energía se va acumulando poco a poco dentro del resorte.
-Cuando el resorte ya no aguanta más, **¡salta con fuerza** en una dirección.
-Este modelo matemático es exactamente ese radar inteligente:
+
+Este modelo:
 1. Detecta cuándo el precio está en una compresión fuerte (el resorte está muy apretado).
 2. Mide cuánta energía se ha acumulado.
 3. Intenta estimar hacia dónde es más probable que salte el precio cuando se libere.
@@ -39,36 +37,48 @@ Este modelo matemático es exactamente ese radar inteligente:
     - **Compresión (Squeeze)**
       Cuando el precio deja de moverse fuerte y se queda “encerrado” en un rango muy estrecho durante varios días.
       *Analogía*: Es como apretar un resorte o contener la respiración. Todo está muy quieto, pero la tensión aumenta.
+      
     - **SqueezeOn (la luz verde)**
       Es la señal que dice: “¡En este momento el precio está realmente comprimido!”
       Aparece como fondo verde en el gráfico principal.
       *Analogía*: La luz del semáforo que se pone en verde para avisarte que el resorte está muy tenso.
+      
     - **SqueezeIndex**
       Nuestro medidor principal de “cuánta tensión hay”.
       Cuanto **más alto** es el número, más energía se está acumulando.
       *Analogía*: Es como el velocímetro del resorte: te dice qué tan fuerte está apretado.
+      
     - **Lambda (Λ)**
       Mide el “ritmo natural” del precio (cuánto tarda normalmente en hacer una pequeña subida y bajada).
       *Analogía*: Cada persona camina a su propio paso. Lambda detecta el “paso” de cada activo (el oro camina distinto que el Bitcoin) para que las matemáticas se adapten perfectamente.
+    
     - **Trend (Tendencia)**
       Te dice hacia dónde es más probable que salte el precio cuando termine la compresión:
       - Arriba → **Alcista** (positivo)
       - Abajo → **Bajista** (negativo)
       *Analogía*: Es como leer la dirección del viento antes de que llegue la ola grande.
+   
     - **SqueezeDetected**
       La **señal más poderosa** del modelo.
       Se enciende solo cuando hay **mucha compresión + una dirección clara**.
       Estas son las situaciones que más nos interesan para prestar atención.
+    
+    
     **Parámetros internos del modelo:**
+   
     - **Ventana = 20 días**
       El modelo mira los últimos 20 días para entender cómo se está comportando el precio.
       (Es como usar una foto reciente del mercado).
+    
     - **Bandas de Bollinger (BB Mult = 2.0)**
       Son dos bandas azules que marcan el rango “normal” del precio. Cuando se estrechan mucho, indican calma.
+    
     - **Canales de Keltner (KC Mult = 1.5)**
       Otro túnel más ajustado que usa la volatilidad real. Cuando las bandas azules entran completamente dentro de este túnel → SqueezeOn.
+    
     - **ATR Period = 20**
       Mide cuánto se mueve normalmente el precio cada día (la volatilidad real).
+    
     - **Trend Threshold = 0.15**
       Nivel mínimo de fuerza de dirección que necesitamos para decir “este Squeeze tiene una tendencia clara”.
     """)
