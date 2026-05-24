@@ -612,7 +612,7 @@ with tab_backtest:
                 st.plotly_chart(fig_bt, use_container_width=True)
 
                 # Tabla detallada
-                with st.expander("📋 Tabla completa de episodios", expanded=True):
+              with st.expander("📋 Tabla completa de episodios", expanded=True):
     st.dataframe(
         bt.style.applymap(
             lambda v: "color: #00ff88" if v == "✅" else "color: #ff4466" if v == "❌" else "",
