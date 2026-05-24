@@ -611,8 +611,10 @@ with tab_backtest:
                 fig_bt = build_backtest_chart(bt)
                 st.plotly_chart(fig_bt, use_container_width=True)
 
+                
                 # Tabla detallada
-           st.dataframe(
+                with st.expander("📋 Tabla completa de episodios", expanded=True):
+                    st.dataframe(
                         bt.style.applymap(
                             lambda v: "color: #00ff88" if v == "✅" else "color: #ff4466" if v == "❌" else "",
                             subset=["Acierto"]
