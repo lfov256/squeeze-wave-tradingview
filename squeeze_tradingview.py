@@ -1,80 +1,209 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║   SQUEEZE INDEX v2.1 — Best of Both (Main + v2)                             ║
-║   Metodología clara + Edge Cuantitativo Real (Welch + Episodios + Backtest) ║
-║   Inspirado en Jim Simons / Renaissance Technologies                         ║
-╚══════════════════════════════════════════════════════════════════════════════╗
+║   SQUEEZE INDEX v3.0 — Rediseño Completo                                    ║
+║   KPIs claros · Backtest riguroso · Visuales de calidad profesional         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 """
 import streamlit as st
 import pandas as pd
 import numpy as np
 from scipy.signal import find_peaks, welch
 from scipy.stats import linregress
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, timezone
 import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+UTC = timezone.utc
+
 st.set_page_config(
-    page_title="SqueezeIndex v2.1",
+    page_title="SqueezeIndex v3.0",
     page_icon="〰️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ── Estilos (mejorados de Main) ───────────────────────────────────────────────
+# ── Estilos ───────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@600;800&display=swap');
-  html, body, [class*="css"] { font-family: 'Space Mono', monospace; }
-  h1, h2, h3 { font-family: 'Syne', sans-serif !important; letter-spacing: -0.02em; }
-  .metric-card { 
-    background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
-    border: 1px solid #30363d; border-radius: 8px; padding: 16px;
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
+
+  html, body, [class*="css"] {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background-color: #080c10;
   }
-  .signal-strong { color: #00ff88; font-weight: 700; }
-  .signal-mild   { color: #ffcc00; font-weight: 700; }
+  h1, h2, h3 { font-family: 'IBM Plex Mono', monospace !important; letter-spacing: -0.03em; }
+
+  /* KPI Cards */
+  .kpi-card {
+    background: #0d1117;
+    border: 1px solid #1e2630;
+    border-radius: 12px;
+    padding: 20px 16px 14px 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .kpi-card.green::before { background: #00d68f; }
+  .kpi-card.yellow::before { background: #ffc107; }
+  .kpi-card.red::before { background: #ff4757; }
+  .kpi-card.blue::before { background: #4da6ff; }
+  .kpi-card.purple::before { background: #b48eff; }
+
+  .kpi-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #6b7685;
+    margin-bottom: 8px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .kpi-value {
+    font-size: 28px;
+    font-weight: 700;
+    font-family: 'IBM Plex Mono', monospace;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .kpi-sub {
+    font-size: 11px;
+    color: #6b7685;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .kpi-green { color: #00d68f; }
+  .kpi-yellow { color: #ffc107; }
+  .kpi-red { color: #ff4757; }
+  .kpi-blue { color: #4da6ff; }
+  .kpi-purple { color: #b48eff; }
+  .kpi-white { color: #e8edf3; }
+
+  /* Signal Banner */
+  .signal-banner {
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 12px 0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    letter-spacing: 0.02em;
+  }
+  .signal-active { background: rgba(0,214,143,0.12); border: 1px solid rgba(0,214,143,0.35); color: #00d68f; }
+  .signal-pending { background: rgba(255,193,7,0.10); border: 1px solid rgba(255,193,7,0.30); color: #ffc107; }
+  .signal-none { background: rgba(107,118,133,0.10); border: 1px solid rgba(107,118,133,0.20); color: #6b7685; }
+
+  /* Section headers */
+  .section-header {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: #4da6ff;
+    border-bottom: 1px solid #1e2630;
+    padding-bottom: 8px;
+    margin: 24px 0 16px 0;
+  }
+
+  /* Explanation boxes */
+  .explain-box {
+    background: #0d1117;
+    border: 1px solid #1e2630;
+    border-left: 3px solid #4da6ff;
+    border-radius: 0 8px 8px 0;
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #8b98a8;
+    line-height: 1.6;
+    margin: 8px 0 16px 0;
+  }
+
+  /* Backtest stat row */
+  .bt-stat {
+    display: inline-flex;
+    flex-direction: column;
+    background: #0d1117;
+    border: 1px solid #1e2630;
+    border-radius: 8px;
+    padding: 12px 16px;
+    min-width: 100px;
+  }
+
+  /* Override Streamlit defaults */
+  .stButton button {
+    background: #0d6efd !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.05em !important;
+  }
+  [data-testid="stMetricValue"] { font-family: 'IBM Plex Mono', monospace !important; }
+  div[data-testid="stExpander"] { border: 1px solid #1e2630 !important; border-radius: 8px !important; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("〰️ SqueezeIndex v2.1")
-st.caption(f"Ejecución: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')} · Física de Ondas + Backtest Real + Metodología Clara")
-
-# ── Pestañas ───────────────────────────────────────────────────────────────────
-tab_dash, tab_backtest, tab_scan, tab_metodologia = st.tabs([
-    "📈 Dashboard", "🎯 Backtest Real", "🔭 Escaneo Multi-Activo", "🧠 Metodología"
-])
+# ── Header ─────────────────────────────────────────────────────────────────────
+col_title, col_time = st.columns([3, 1])
+with col_title:
+    st.markdown("# 〰️ SqueezeIndex v3.0")
+    st.caption("Física de Ondas · Análisis Espectral · Backtest Real por Episodios")
+with col_time:
+    st.markdown(f"""
+    <div style='text-align:right; padding-top:12px; font-family:IBM Plex Mono,monospace; font-size:11px; color:#6b7685;'>
+    {datetime.now(UTC).strftime('%Y-%m-%d')}<br>
+    {datetime.now(UTC).strftime('%H:%M:%S UTC')}
+    </div>
+    """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# BARRA LATERAL (mejorada)
+# SIDEBAR
 # ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.header("🎛️ Control de Ondas")
+    st.markdown("### 🎛️ Parámetros")
 
     ASSETS = {
-        "EURUSD": "C:EURUSD", "GBPUSD": "C:GBPUSD",
-        "USDJPY": "C:USDJPY", "Oro": "C:XAUUSD",
-        "Plata": "C:XAGUSD", "SPY": "SPY",
-        "BTCUSD": "X:BTCUSD", "ETHUSD": "X:ETHUSD",
-        "USO": "USO", "QQQ": "QQQ",
+        "EUR/USD": "C:EURUSD", "GBP/USD": "C:GBPUSD",
+        "USD/JPY": "C:USDJPY", "Oro (XAU/USD)": "C:XAUUSD",
+        "Plata (XAG/USD)": "C:XAGUSD", "SPY (S&P 500)": "SPY",
+        "BTC/USD": "X:BTCUSD", "ETH/USD": "X:ETHUSD",
+        "USO (Petróleo)": "USO", "QQQ (Nasdaq)": "QQQ",
     }
-    selected_asset = st.selectbox("Activo principal", list(ASSETS.keys()))
+    selected_asset = st.selectbox("Activo", list(ASSETS.keys()))
     ticker = ASSETS[selected_asset]
-
     days = st.slider("Días de histórico", 60, 730, 365)
 
-    st.subheader("⚙️ Parámetros")
-    window = st.slider("Ventana BB / EMA / Lambda", 10, 60, 20)
-    bb_mult = st.slider("BB Multiplier", 1.0, 3.5, 2.0, 0.1)
-    kc_mult = st.slider("Keltner Multiplier", 1.0, 3.0, 1.5, 0.1)
-    atr_period = st.slider("ATR Period", 10, 40, 20)
-    threshold = st.slider("Trend Threshold", 0.05, 0.5, 0.15, 0.01)
+    st.divider()
+    st.markdown("**Bandas & Canales**")
+    window = st.slider("Ventana (BB / EMA)", 10, 60, 20)
+    bb_mult = st.slider("Multiplicador BB", 1.0, 3.5, 2.0, 0.1,
+                        help="Mayor → menos squeezes detectados (más conservador)")
+    kc_mult = st.slider("Multiplicador Keltner", 1.0, 3.0, 1.5, 0.1,
+                        help="Mayor → más fácil que BB entre en KC (más señales)")
+    atr_period = st.slider("Período ATR", 10, 40, 20,
+                           help="Volatilidad base para Keltner y normalización de Trend")
 
-    st.subheader("🔬 Análisis espectral")
-    use_spectrum = st.checkbox("Usar frecuencia dominante (Welch)", value=True)
-    use_vol_filter = st.checkbox("Filtrar régimen alta volatilidad", value=True)
+    st.markdown("**Señal**")
+    threshold = st.slider("Mínimo de Trend para señal", 0.05, 0.5, 0.15, 0.01,
+                          help="Cuánta dirección mínima se necesita para activar una señal fuerte")
 
-    update = st.button("🔄 Calcular", type="primary", use_container_width=True)
+    st.markdown("**Opciones avanzadas**")
+    use_spectrum = st.checkbox("Lambda por análisis espectral (Welch)", value=True,
+                               help="Más robusto que contar picos. Requiere ≥16 barras en ventana.")
+    use_vol_filter = st.checkbox("Filtrar señales en alta volatilidad", value=True,
+                                 help="Desactiva señales cuando ATR > percentil 75. Más selectivo.")
+
+    st.divider()
+    update = st.button("▶ Calcular", type="primary", use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # API KEY
@@ -82,12 +211,11 @@ with st.sidebar:
 API_KEY = st.secrets["API_KEY"]
 
 # ══════════════════════════════════════════════════════════════════════════════
-# FUNCIONES CORE (v2 completo + mejoras)
+# FUNCIONES CORE
 # ══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_data(ttl=3600)
 def fetch_data(ticker: str, days: int = 365) -> pd.DataFrame:
-    """Descarga OHLCV desde Polygon.io (más estable que massive.com)."""
     now = datetime.now(UTC)
     end_date = (now + timedelta(days=1)).date()
     start_date = end_date - timedelta(days=days)
@@ -115,13 +243,11 @@ def fetch_data(ticker: str, days: int = 365) -> pd.DataFrame:
 
 
 def compute_lambda_vectorized(smoothed: pd.Series, window: int, use_spectrum: bool) -> pd.Series:
-    """Lambda con Welch PSD vectorizado (robusto) o peaks clásico."""
     n = len(smoothed)
     lambda_arr = np.full(n, np.nan)
     prices_arr = smoothed.values
-
     for i in range(window - 1, n):
-        seg = prices_arr[i - window + 1 : i + 1]
+        seg = prices_arr[i - window + 1: i + 1]
         if use_spectrum and len(seg) >= 16:
             try:
                 freqs, psd = welch(seg, nperseg=min(len(seg), 8))
@@ -142,10 +268,8 @@ def compute_lambda_vectorized(smoothed: pd.Series, window: int, use_spectrum: bo
                 lambda_arr[i] = float(np.mean(np.diff(extrema)))
             else:
                 lambda_arr[i] = window / 2
-
     lam = pd.Series(lambda_arr, index=smoothed.index)
-    lam = lam.ffill().bfill().clip(lower=2.0)
-    return lam
+    return lam.ffill().bfill().clip(lower=2.0)
 
 
 def compute_atr(df: pd.DataFrame, period: int) -> pd.Series:
@@ -159,27 +283,24 @@ def compute_atr(df: pd.DataFrame, period: int) -> pd.Series:
 
 
 def compute_trend(df: pd.DataFrame, smoothed: pd.Series, lam: pd.Series) -> pd.Series:
-    """Trend 4 componentes (mejorado de v2)."""
     n = len(df)
     prices_arr = smoothed.values
     atr_arr = df["ATR"].values
     lam_arr = lam.values
-
     slope_long_arr = np.zeros(n)
     slope_short_arr = np.zeros(n)
-
     for i in range(n):
-        lv = max(6, int(lam_arr[i] * 1.0))
+        lv = max(6, int(lam_arr[i]))
         atr_v = atr_arr[i]
         if atr_v == 0 or np.isnan(atr_v):
             continue
         if i >= lv - 1:
-            seg = prices_arr[i - lv + 1 : i + 1]
+            seg = prices_arr[i - lv + 1: i + 1]
             x = np.arange(len(seg), dtype=float)
             slope_long_arr[i] = np.polyfit(x, seg, 1)[0] / atr_v
         short_w = 6
         if i >= short_w - 1:
-            seg_s = prices_arr[i - short_w + 1 : i + 1]
+            seg_s = prices_arr[i - short_w + 1: i + 1]
             x_s = np.arange(short_w, dtype=float)
             slope_short_arr[i] = np.polyfit(x_s, seg_s, 1)[0] / atr_v
 
@@ -205,7 +326,6 @@ def compute_trend(df: pd.DataFrame, smoothed: pd.Series, lam: pd.Series) -> pd.S
         0.25 * mfi_score +
         0.15 * roc_normalized
     ).ewm(span=2, adjust=False).mean()
-
     return trend
 
 
@@ -214,68 +334,58 @@ def detect_squeeze_episodes(squeeze_on: pd.Series, min_duration: int = 3) -> pd.
     ep_id = 0
     in_sq = False
     start = 0
-    for i, val in enumerate(squeeze_on):
+    vals = squeeze_on.values
+    for i, val in enumerate(vals):
         if val and not in_sq:
             in_sq = True
             start = i
         elif not val and in_sq:
             in_sq = False
-            duration = i - start
-            if duration >= min_duration:
+            if i - start >= min_duration:
                 ep_id += 1
                 episode[start:i] = ep_id
-        elif val and in_sq and i == len(squeeze_on) - 1:
-            duration = i - start + 1
-            if duration >= min_duration:
+        elif val and in_sq and i == len(vals) - 1:
+            if i - start + 1 >= min_duration:
                 ep_id += 1
                 episode[start:] = ep_id
     return pd.Series(episode, index=squeeze_on.index)
 
 
 def calculate_squeeze_index(
-    df: pd.DataFrame,
-    window: int, bb_mult: float, kc_mult: float,
+    df: pd.DataFrame, window: int, bb_mult: float, kc_mult: float,
     atr_period: int, threshold: float,
     use_spectrum: bool = True, use_vol_filter: bool = True
 ) -> pd.DataFrame:
     if df.empty or len(df) < window + 10:
         return df
 
-    # Bandas Bollinger
     df["EMA"] = df["Close"].ewm(span=window, adjust=False).mean()
     df["STD"] = df["Close"].rolling(window).std()
     df["UpperBB"] = df["EMA"] + bb_mult * df["STD"]
     df["LowerBB"] = df["EMA"] - bb_mult * df["STD"]
     df["BBWidth"] = (df["UpperBB"] - df["LowerBB"]) / df["EMA"].replace(0, np.nan)
 
-    # ATR + Keltner
     df["ATR"] = compute_atr(df, atr_period)
     df["UpperKC"] = df["EMA"] + kc_mult * df["ATR"]
     df["LowerKC"] = df["EMA"] - kc_mult * df["ATR"]
 
-    # Lambda (Welch o peaks)
     smoothed = df["Close"].ewm(span=5, adjust=False).mean()
     df["Lambda"] = compute_lambda_vectorized(smoothed, window, use_spectrum)
 
-    # SqueezeIndex mejorado (percentil + Lorentzian)
     bb_percentile = df["BBWidth"].rolling(window * 3).rank(pct=True).fillna(0.5)
     compression_factor = (1 - bb_percentile).clip(0, 1)
-    # Lorentzian (mejor para colas pesadas)
     lambda_quality = 1 / (1 + ((df["Lambda"] - window / 3) / (window / 4)) ** 2)
     raw_si = compression_factor / df["BBWidth"].replace(0, np.nan)
     si_roll_max = raw_si.rolling(window * 3).max().replace(0, np.nan)
     df["SqueezeIndex"] = ((raw_si / si_roll_max) * 100 * lambda_quality).clip(0, 100).fillna(0)
 
-    # Episodios
     df["SqueezeOn"] = (df["UpperBB"] <= df["UpperKC"]) & (df["LowerBB"] >= df["LowerKC"])
     df["SqueezeEpisode"] = detect_squeeze_episodes(df["SqueezeOn"], min_duration=3)
 
-    # Trend 4 componentes
     df["Trend"] = compute_trend(df, smoothed, df["Lambda"])
     df["Direction"] = np.where(df["Trend"] > 0, "Alcista",
                        np.where(df["Trend"] < 0, "Bajista", "Neutral"))
 
-    # Señal + Filtro régimen vol
     df["SqueezeDetected"] = df["SqueezeOn"] & (df["Trend"].abs() > threshold)
     if use_vol_filter:
         vol_pct = df["ATR"].rolling(50).rank(pct=True).fillna(0.5)
@@ -288,14 +398,15 @@ def calculate_squeeze_index(
 
     return df
 
+
 # ══════════════════════════════════════════════════════════════════════════════
-# BACKTEST REAL (EPISODIOS) — MEJORADO v2.1
+# BACKTEST RIGUROSO
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_backtest(df: pd.DataFrame, forward_days: int = 5) -> pd.DataFrame:
+def run_backtest(df: pd.DataFrame, forward_days: int = 5) -> tuple[pd.DataFrame, dict]:
     """
-    Backtest riguroso por EPISODIO de squeeze (el único matemáticamente correcto).
-    Mide el retorno REAL en los N días SIGUIENTES al final del episodio.
+    Backtest post-episodio: mide el retorno real en los N días DESPUÉS del squeeze.
+    Devuelve DataFrame de episodios + dict de métricas agregadas.
     """
     records = []
     episodes = df[df["SqueezeEpisode"] > 0]["SqueezeEpisode"].unique()
@@ -313,180 +424,470 @@ def run_backtest(df: pd.DataFrame, forward_days: int = 5) -> pd.DataFrame:
         entry_price = df["Close"].iloc[ep_end_pos]
         exit_price = df["Close"].iloc[fwd_end_pos]
         fwd_return = (exit_price - entry_price) / entry_price * 100
-        fwd_high = df["High"].iloc[ep_end_pos + 1 : fwd_end_pos + 1].max()
-        fwd_low = df["Low"].iloc[ep_end_pos + 1 : fwd_end_pos + 1].min()
+
+        # Max favorable / max adverse (para ratio riesgo/recompensa)
+        fwd_slice = df.iloc[ep_end_pos + 1: fwd_end_pos + 1]
+        if len(fwd_slice) == 0:
+            continue
+        fwd_high = fwd_slice["High"].max()
+        fwd_low = fwd_slice["Low"].min()
+        max_favorable = (fwd_high - entry_price) / entry_price * 100
+        max_adverse = (fwd_low - entry_price) / entry_price * 100
 
         last_day = ep_data.iloc[-1]
         pred_dir = last_day["Direction"]
-        trend_val = last_day["Trend"]
-        si_max = ep_data["SqueezeIndex"].max()
-        duration = len(ep_data)
-
-        actual_dir = "Alcista" if fwd_return > 0 else "Bajista" if fwd_return < 0 else "Neutral"
+        actual_dir = "Alcista" if fwd_return > 0 else "Bajista"
         hit = (pred_dir == actual_dir) and (pred_dir != "Neutral")
 
+        # Retorno alineado con la señal (si predice alcista, retorno positivo = win)
+        if pred_dir == "Alcista":
+            aligned_return = fwd_return
+            mfe = max_favorable
+            mae = abs(max_adverse)
+        elif pred_dir == "Bajista":
+            aligned_return = -fwd_return  # short
+            mfe = abs(max_adverse)
+            mae = max_favorable
+        else:
+            aligned_return = 0
+            mfe = 0
+            mae = 0
+
         records.append({
-            "Episodio": ep_id,
-            "Fin_Episodio": df["Date"].iloc[ep_end_pos],
-            "Duración_días": duration,
-            "SI_Max": round(si_max, 1),
-            "Trend_Señal": round(trend_val, 4),
-            "Dirección_Pred": pred_dir,
-            "Precio_Entrada": round(entry_price, 4),
-            "Precio_Salida": round(exit_price, 4),
-            "Retorno_%": round(fwd_return, 2),
-            "High_fwd": round(fwd_high, 4),
-            "Low_fwd": round(fwd_low, 4),
-            "Dirección_Real": actual_dir,
-            "Acierto": "✅" if hit else "❌",
+            "Ep.": int(ep_id),
+            "Fin Episodio": str(df["Date"].iloc[ep_end_pos]),
+            "Duración": int(len(ep_data)),
+            "SI Máx.": round(last_day["SqueezeIndex"], 1),
+            "Trend": round(last_day["Trend"], 3),
+            "Señal": pred_dir,
+            "Precio Entrada": round(entry_price, 4),
+            "Precio Salida": round(exit_price, 4),
+            f"Retorno {forward_days}d (%)": round(fwd_return, 2),
+            "Ret. Alineado (%)": round(aligned_return, 2),
+            "MFE (%)": round(mfe, 2),
+            "MAE (%)": round(mae, 2),
+            "Real": actual_dir,
+            "✓": "✅" if hit else "❌",
+            "_hit": hit,
+            "_aligned_return": aligned_return,
         })
 
     bt = pd.DataFrame(records)
     if bt.empty:
-        return bt
+        return bt, {}
 
-    # Métricas adicionales v2.1
-    bt["Expectancy"] = bt.apply(
-        lambda row: row["Retorno_%"] if row["Acierto"] == "✅" else -abs(row["Retorno_%"]), axis=1
-    )
-    wins = bt[bt["Acierto"] == "✅"]["Retorno_%"]
-    losses = bt[bt["Acierto"] == "❌"]["Retorno_%"]
-    if len(wins) > 0 and len(losses) > 0:
-        win_rate = len(wins) / len(bt)
-        avg_win = wins.mean()
-        avg_loss = abs(losses.mean())
-        bt["Sharpe_aprox"] = (bt["Retorno_%"].mean() / bt["Retorno_%"].std()) * np.sqrt(252) if bt["Retorno_%"].std() > 0 else 0
-    else:
-        bt["Sharpe_aprox"] = 0
+    # ─── Métricas agregadas ───────────────────────────────────────────────────
+    total = len(bt)
+    wins = bt[bt["_hit"] == True]
+    losses = bt[bt["_hit"] == False]
+    win_rate = len(wins) / total * 100 if total > 0 else 0
 
-    return bt
+    avg_win = wins["_aligned_return"].mean() if len(wins) > 0 else 0
+    avg_loss = losses["_aligned_return"].mean() if len(losses) > 0 else 0
+    # Payoff ratio: promedio ganancia / promedio pérdida (absoluto)
+    payoff = avg_win / abs(avg_loss) if avg_loss != 0 else np.nan
+    # Expectancy por operación
+    expectancy = (win_rate / 100 * avg_win) + ((1 - win_rate / 100) * avg_loss)
+    # Profit factor
+    gross_wins = wins["_aligned_return"].sum() if len(wins) > 0 else 0
+    gross_losses = abs(losses["_aligned_return"].sum()) if len(losses) > 0 else 0
+    profit_factor = gross_wins / gross_losses if gross_losses > 0 else np.nan
+    # Sharpe aproximado (anualizado, asumiendo 252 días)
+    ret_series = bt["_aligned_return"]
+    sharpe = (ret_series.mean() / ret_series.std() * np.sqrt(252 / forward_days)) if ret_series.std() > 0 else 0
+    # Drawdown máximo en retornos acumulados
+    cum_ret = ret_series.cumsum()
+    rolling_max = cum_ret.cummax()
+    drawdown = (cum_ret - rolling_max)
+    max_dd = drawdown.min()
+    # Calmar ratio
+    total_cum = cum_ret.iloc[-1] if len(cum_ret) > 0 else 0
+    calmar = total_cum / abs(max_dd) if max_dd != 0 else np.nan
+
+    metrics = {
+        "total": total,
+        "win_rate": win_rate,
+        "avg_win": avg_win,
+        "avg_loss": avg_loss,
+        "payoff": payoff,
+        "expectancy": expectancy,
+        "profit_factor": profit_factor,
+        "sharpe": sharpe,
+        "max_dd": max_dd,
+        "calmar": calmar,
+        "total_cum": total_cum,
+        "gross_wins": gross_wins,
+        "gross_losses": gross_losses,
+    }
+    return bt, metrics
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GRÁFICOS
 # ══════════════════════════════════════════════════════════════════════════════
 
+COLORS = {
+    "green": "#00d68f",
+    "red": "#ff4757",
+    "yellow": "#ffc107",
+    "blue": "#4da6ff",
+    "purple": "#b48eff",
+    "bg": "#080c10",
+    "panel": "#0d1117",
+    "border": "#1e2630",
+    "text_dim": "#6b7685",
+    "text": "#c8d0db",
+}
+
+PLOTLY_TEMPLATE = dict(
+    layout=dict(
+        paper_bgcolor=COLORS["bg"],
+        plot_bgcolor=COLORS["panel"],
+        font=dict(family="IBM Plex Mono, monospace", size=11, color=COLORS["text"]),
+        xaxis=dict(gridcolor="#1a2030", showgrid=True, zeroline=False, tickfont=dict(size=10)),
+        yaxis=dict(gridcolor="#1a2030", showgrid=True, zeroline=False, tickfont=dict(size=10)),
+    )
+)
+
+
 def build_main_chart(df: pd.DataFrame, asset_name: str) -> go.Figure:
+    """
+    4 paneles:
+    1. Precio + BB + Keltner + marcadores squeeze
+    2. SqueezeIndex (gauge horizontal temporal)
+    3. Trend compuesto (4 componentes)
+    4. Lambda — longitud de onda dominante
+    """
     fig = make_subplots(
         rows=4, cols=1, shared_xaxes=True,
-        row_heights=[0.50, 0.18, 0.16, 0.16],
-        vertical_spacing=0.03,
-        subplot_titles=(
-            f"{asset_name} — Precio + BB + Keltner",
-            "SqueezeIndex v2.1 (energía acumulada, escala 0-100)",
-            "Trend Compuesto (4 componentes + ROC)",
-            "Lambda Ω — Longitud de Onda Dominante (Welch)",
-        )
+        row_heights=[0.48, 0.18, 0.18, 0.16],
+        vertical_spacing=0.025,
     )
 
+    # ─ Panel 1: Precio ─────────────────────────────────────────────────────
     fig.add_trace(go.Candlestick(
-        x=df["Date"], open=df["Open"], high=df["High"],
-        low=df["Low"], close=df["Close"], name="Precio",
-        increasing_line_color="#00ff88", decreasing_line_color="#ff4466"
+        x=df["Date"],
+        open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"],
+        name="Precio",
+        increasing=dict(line=dict(color=COLORS["green"], width=1), fillcolor=COLORS["green"]),
+        decreasing=dict(line=dict(color=COLORS["red"], width=1), fillcolor=COLORS["red"]),
+        whiskerwidth=0.4,
     ), row=1, col=1)
 
-    fig.add_trace(go.Scatter(x=df["Date"], y=df["UpperBB"],
-        line=dict(color="#4488ff", width=1.2), name="Upper BB"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df["Date"], y=df["LowerBB"],
-        line=dict(color="#4488ff", width=1.2), fill="tonexty",
-        fillcolor="rgba(68,136,255,0.06)", name="Lower BB"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df["Date"], y=df["UpperKC"],
-        line=dict(color="#ffaa00", width=1, dash="dash"), name="Upper KC"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df["Date"], y=df["LowerKC"],
-        line=dict(color="#ffaa00", width=1, dash="dash"), name="Lower KC"), row=1, col=1)
-
-    # Fondo verde = SqueezeOn
-    for i in range(len(df) - 1):
-        if df["SqueezeOn"].iloc[i]:
-            fig.add_vrect(
-                x0=df["Date"].iloc[i], x1=df["Date"].iloc[i + 1],
-                fillcolor="rgba(0,255,136,0.12)", layer="below", line_width=0,
-                row=1, col=1
-            )
-
-    # Marcadores SqueezeDetected
-    sq_det = df[df["SqueezeDetected"]]
+    # BB
     fig.add_trace(go.Scatter(
-        x=sq_det["Date"], y=sq_det["Low"] * 0.998,
-        mode="markers",
-        marker=dict(symbol="triangle-up", color="gold", size=10),
-        name="SqueezeDetected ▲"
+        x=df["Date"], y=df["UpperBB"],
+        line=dict(color=COLORS["blue"], width=1.2),
+        name="BB Superior", showlegend=True
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=df["Date"], y=df["LowerBB"],
+        line=dict(color=COLORS["blue"], width=1.2),
+        fill="tonexty", fillcolor="rgba(77,166,255,0.05)",
+        name="BB Inferior", showlegend=True
     ), row=1, col=1)
 
-    # SqueezeIndex
-    si_colors = np.where(
-        df["SqueezeIndex"] > 80, "#ff4466",
-        np.where(df["SqueezeIndex"] > 50, "#ffaa00", "#4488ff")
-    )
+    # Keltner
+    fig.add_trace(go.Scatter(
+        x=df["Date"], y=df["UpperKC"],
+        line=dict(color=COLORS["yellow"], width=1, dash="dot"),
+        name="KC Superior", showlegend=True
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=df["Date"], y=df["LowerKC"],
+        line=dict(color=COLORS["yellow"], width=1, dash="dot"),
+        name="KC Inferior", showlegend=True
+    ), row=1, col=1)
+
+    # Fondo squeeze
+    squeeze_regions = []
+    in_sq = False
+    for i in range(len(df)):
+        if df["SqueezeOn"].iloc[i] and not in_sq:
+            in_sq = True
+            sq_start = df["Date"].iloc[i]
+        elif not df["SqueezeOn"].iloc[i] and in_sq:
+            in_sq = False
+            squeeze_regions.append((sq_start, df["Date"].iloc[i - 1]))
+    if in_sq:
+        squeeze_regions.append((sq_start, df["Date"].iloc[-1]))
+
+    for x0, x1 in squeeze_regions:
+        fig.add_vrect(x0=x0, x1=x1,
+                      fillcolor="rgba(0,214,143,0.07)", layer="below", line_width=0,
+                      row=1, col=1)
+
+    # Marcadores señal fuerte
+    sq_det = df[df["SqueezeDetected"]]
+    if len(sq_det) > 0:
+        sq_bull = sq_det[sq_det["Direction"] == "Alcista"]
+        sq_bear = sq_det[sq_det["Direction"] == "Bajista"]
+        if len(sq_bull) > 0:
+            fig.add_trace(go.Scatter(
+                x=sq_bull["Date"], y=sq_bull["Low"] * 0.9975,
+                mode="markers", name="Señal Alcista",
+                marker=dict(symbol="triangle-up", color=COLORS["green"], size=9,
+                            line=dict(color="#ffffff", width=0.5))
+            ), row=1, col=1)
+        if len(sq_bear) > 0:
+            fig.add_trace(go.Scatter(
+                x=sq_bear["Date"], y=sq_bear["High"] * 1.0025,
+                mode="markers", name="Señal Bajista",
+                marker=dict(symbol="triangle-down", color=COLORS["red"], size=9,
+                            line=dict(color="#ffffff", width=0.5))
+            ), row=1, col=1)
+
+    # EMA
+    fig.add_trace(go.Scatter(
+        x=df["Date"], y=df["EMA"],
+        line=dict(color="rgba(255,255,255,0.25)", width=1),
+        name="EMA", showlegend=False
+    ), row=1, col=1)
+
+    # ─ Panel 2: SqueezeIndex ───────────────────────────────────────────────
+    si_vals = df["SqueezeIndex"].values
+    si_colors = [
+        COLORS["red"] if v > 80 else COLORS["yellow"] if v > 50 else COLORS["blue"]
+        for v in si_vals
+    ]
     fig.add_trace(go.Bar(
         x=df["Date"], y=df["SqueezeIndex"],
-        marker_color=si_colors, name="SqueezeIndex"
+        marker=dict(color=si_colors, opacity=0.9),
+        name="SqueezeIndex",
     ), row=2, col=1)
-    fig.add_hline(y=80, line_dash="dot", line_color="#ff4466",
-                  annotation_text="Extremo", row=2, col=1)
-    fig.add_hline(y=50, line_dash="dot", line_color="#ffaa00",
-                  annotation_text="Medio", row=2, col=1)
+    fig.add_hline(y=80, line_dash="dot", line_color=COLORS["red"], line_width=0.8,
+                  annotation_text="Extremo", annotation_font=dict(size=9, color=COLORS["red"]),
+                  row=2, col=1)
+    fig.add_hline(y=50, line_dash="dot", line_color=COLORS["yellow"], line_width=0.8,
+                  annotation_text="Moderado", annotation_font=dict(size=9, color=COLORS["yellow"]),
+                  row=2, col=1)
 
-    # Trend
-    trend_colors = np.where(df["Trend"] > 0, "#00ff88", "#ff4466")
+    # ─ Panel 3: Trend ──────────────────────────────────────────────────────
+    trend_vals = df["Trend"].values
+    trend_colors = [COLORS["green"] if v > 0 else COLORS["red"] for v in trend_vals]
     fig.add_trace(go.Bar(
         x=df["Date"], y=df["Trend"],
-        marker_color=trend_colors, name="Trend"
+        marker=dict(color=trend_colors, opacity=0.85),
+        name="Trend",
     ), row=3, col=1)
-    fig.add_hline(y=0, line_color="#666", line_width=0.8, row=3, col=1)
+    fig.add_hline(y=threshold, line_dash="dot", line_color="rgba(0,214,143,0.4)", line_width=0.8,
+                  row=3, col=1)
+    fig.add_hline(y=-threshold, line_dash="dot", line_color="rgba(255,71,87,0.4)", line_width=0.8,
+                  row=3, col=1)
+    fig.add_hline(y=0, line_color="#2a3440", line_width=1, row=3, col=1)
 
-    # Lambda
+    # ─ Panel 4: Lambda ─────────────────────────────────────────────────────
     fig.add_trace(go.Scatter(
         x=df["Date"], y=df["Lambda"],
-        line=dict(color="#bb88ff", width=1.5), name="Lambda Ω",
-        fill="tozeroy", fillcolor="rgba(187,136,255,0.1)"
+        line=dict(color=COLORS["purple"], width=1.5),
+        fill="tozeroy", fillcolor="rgba(180,142,255,0.08)",
+        name="Lambda Ω",
     ), row=4, col=1)
 
+    # ─ Anotaciones de panel ───────────────────────────────────────────────
+    annotations = [
+        dict(text="PRECIO + BB + KELTNER", xref="paper", yref="paper",
+             x=0.01, y=1.0, xanchor="left", showarrow=False,
+             font=dict(size=9, color=COLORS["text_dim"], family="IBM Plex Mono")),
+        dict(text="SQUEEZE INDEX (energía acumulada 0–100)", xref="paper", yref="paper",
+             x=0.01, y=0.505, xanchor="left", showarrow=False,
+             font=dict(size=9, color=COLORS["text_dim"], family="IBM Plex Mono")),
+        dict(text="TREND COMPUESTO (4 componentes)", xref="paper", yref="paper",
+             x=0.01, y=0.315, xanchor="left", showarrow=False,
+             font=dict(size=9, color=COLORS["text_dim"], family="IBM Plex Mono")),
+        dict(text="LAMBDA Ω — CICLO DOMINANTE (días)", xref="paper", yref="paper",
+             x=0.01, y=0.145, xanchor="left", showarrow=False,
+             font=dict(size=9, color=COLORS["text_dim"], family="IBM Plex Mono")),
+    ]
+
     fig.update_layout(
-        height=950,
-        template="plotly_dark",
+        height=1000,
+        margin=dict(l=8, r=8, t=8, b=8),
         hovermode="x unified",
-        showlegend=False,
-        paper_bgcolor="#0d1117",
-        plot_bgcolor="#0d1117",
-        font=dict(family="Space Mono, monospace", size=11),
-        title=dict(text=f"〰️ {asset_name} — Ondas de Compresión v2.1", font=dict(size=16))
+        hoverlabel=dict(
+            bgcolor="#0d1117",
+            bordercolor="#1e2630",
+            font=dict(family="IBM Plex Mono, monospace", size=11)
+        ),
+        paper_bgcolor=COLORS["bg"],
+        plot_bgcolor=COLORS["panel"],
+        font=dict(family="IBM Plex Mono, monospace", size=10, color=COLORS["text"]),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.005, xanchor="left", x=0,
+            bgcolor="rgba(0,0,0,0)", font=dict(size=10),
+            itemsizing="constant"
+        ),
+        xaxis_rangeslider_visible=False,
+        annotations=annotations,
     )
-    fig.update_xaxes(gridcolor="rgba(128,128,128,0.15)", showgrid=True)
-    fig.update_yaxes(gridcolor="rgba(128,128,128,0.15)", showgrid=True)
+
+    for i in range(1, 5):
+        fig.update_xaxes(
+            gridcolor="#151c24", showgrid=True, zeroline=False,
+            tickfont=dict(size=9), row=i, col=1
+        )
+        fig.update_yaxes(
+            gridcolor="#151c24", showgrid=True, zeroline=False,
+            tickfont=dict(size=9), row=i, col=1
+        )
+
     return fig
 
 
-def build_backtest_chart(bt: pd.DataFrame) -> go.Figure:
+def build_backtest_chart(bt: pd.DataFrame, metrics: dict, forward_days: int) -> go.Figure:
+    """
+    Gráfico de backtest en 2 paneles:
+    1. Retorno alineado por episodio (verde/rojo = acierto/fallo)
+    2. Curva de equity acumulada
+    """
     if bt.empty:
         return go.Figure()
 
-    colors = np.where(bt["Acierto"] == "✅", "#00ff88", "#ff4466")
-    fig = go.Figure()
+    fig = make_subplots(
+        rows=2, cols=1,
+        row_heights=[0.55, 0.45],
+        vertical_spacing=0.08,
+        subplot_titles=["", ""],
+    )
+
+    # Panel 1: Barras de retorno por episodio
+    colors_ep = [COLORS["green"] if h else COLORS["red"] for h in bt["_hit"]]
     fig.add_trace(go.Bar(
-        x=bt["Fin_Episodio"].astype(str),
-        y=bt["Retorno_%"],
-        marker_color=colors,
-        text=bt["Dirección_Pred"],
+        x=[f"Ep.{r['Ep.']}<br>{r['Fin Episodio']}" for _, r in bt.iterrows()],
+        y=bt["Ret. Alineado (%)"],
+        marker=dict(color=colors_ep, opacity=0.85, line=dict(width=0)),
+        text=[f"{v:+.2f}%" for v in bt["Ret. Alineado (%)"]],
         textposition="outside",
-        name="Retorno Fwd"
+        textfont=dict(size=9, family="IBM Plex Mono"),
+        name="Retorno alineado",
+        hovertemplate=(
+            "<b>Episodio %{x}</b><br>"
+            "Retorno: %{y:.2f}%<br>"
+            "<extra></extra>"
+        )
+    ), row=1, col=1)
+
+    # MAE como error bars (riesgo asumido)
+    fig.add_trace(go.Scatter(
+        x=[f"Ep.{r['Ep.']}<br>{r['Fin Episodio']}" for _, r in bt.iterrows()],
+        y=[0] * len(bt),
+        mode="markers",
+        marker=dict(size=0, opacity=0),
+        error_y=dict(
+            type="data",
+            array=bt["MFE (%)"].tolist(),
+            arrayminus=bt["MAE (%)"].tolist(),
+            visible=True,
+            color="rgba(255,255,255,0.15)",
+            thickness=1.5,
+            width=4
+        ),
+        name="MFE/MAE range",
+        showlegend=False,
+    ), row=1, col=1)
+
+    fig.add_hline(y=0, line_color="#2a3440", line_width=1.2, row=1, col=1)
+
+    # Panel 2: Equity curve
+    cum_ret = bt["Ret. Alineado (%)"].cumsum()
+    fig.add_trace(go.Scatter(
+        x=list(range(1, len(cum_ret) + 1)),
+        y=cum_ret,
+        line=dict(color=COLORS["blue"], width=2.5),
+        fill="tozeroy",
+        fillcolor=f"rgba(77,166,255,0.08)",
+        name="Equity acumulada",
+    ), row=2, col=1)
+
+    # Marcar drawdown
+    rolling_max = cum_ret.cummax()
+    dd = cum_ret - rolling_max
+    fig.add_trace(go.Scatter(
+        x=list(range(1, len(dd) + 1)),
+        y=dd,
+        fill="tozeroy",
+        fillcolor="rgba(255,71,87,0.12)",
+        line=dict(color="rgba(255,71,87,0.4)", width=1),
+        name="Drawdown",
+    ), row=2, col=1)
+
+    fig.add_hline(y=0, line_color="#2a3440", line_width=1, row=2, col=1)
+
+    fig.update_layout(
+        height=480,
+        margin=dict(l=8, r=8, t=8, b=8),
+        paper_bgcolor=COLORS["bg"],
+        plot_bgcolor=COLORS["panel"],
+        font=dict(family="IBM Plex Mono, monospace", size=10, color=COLORS["text"]),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0,
+            bgcolor="rgba(0,0,0,0)", font=dict(size=10)
+        ),
+        hovermode="x unified",
+        hoverlabel=dict(bgcolor="#0d1117", bordercolor="#1e2630",
+                        font=dict(family="IBM Plex Mono, monospace", size=11)),
+        bargap=0.15,
+    )
+    for i in range(1, 3):
+        fig.update_xaxes(gridcolor="#151c24", tickfont=dict(size=9), row=i, col=1)
+        fig.update_yaxes(gridcolor="#151c24", tickfont=dict(size=9), row=i, col=1)
+
+    return fig
+
+
+def build_scan_chart(df_res: pd.DataFrame) -> go.Figure:
+    df_sorted = df_res.sort_values("SI")
+    colors = [COLORS["green"] if "🚨" in s else COLORS["yellow"] if "⏳" in s else COLORS["text_dim"]
+              for s in df_sorted["Señal"].tolist()]
+    fig = go.Figure(go.Bar(
+        x=df_sorted["SI"],
+        y=df_sorted["Activo"],
+        orientation="h",
+        marker=dict(color=colors, opacity=0.85),
+        text=[f"{v:.1f}" for v in df_sorted["SI"]],
+        textposition="inside",
+        textfont=dict(size=11, family="IBM Plex Mono, monospace", color="#fff"),
     ))
     fig.update_layout(
-        title="Retorno post-squeeze por episodio (verdes = acierto)",
-        template="plotly_dark",
-        height=380,
-        xaxis_title="Fin del episodio",
-        yaxis_title="Retorno % (N días)",
-        paper_bgcolor="#0d1117",
-        plot_bgcolor="#0d1117",
-        font=dict(family="Space Mono, monospace", size=11),
+        height=320,
+        margin=dict(l=8, r=8, t=8, b=8),
+        paper_bgcolor=COLORS["bg"],
+        plot_bgcolor=COLORS["panel"],
+        font=dict(family="IBM Plex Mono, monospace", size=10, color=COLORS["text"]),
+        xaxis=dict(title="SqueezeIndex", gridcolor="#151c24", range=[0, 105]),
+        yaxis=dict(gridcolor="rgba(0,0,0,0)"),
+        showlegend=False,
     )
-    fig.add_hline(y=0, line_color="#888", line_width=0.8)
+    fig.add_vline(x=80, line_dash="dot", line_color=COLORS["red"], line_width=1,
+                  annotation_text="Extremo", annotation_font=dict(size=9, color=COLORS["red"]))
+    fig.add_vline(x=50, line_dash="dot", line_color=COLORS["yellow"], line_width=1)
     return fig
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# EMAIL (mejorado)
+# HELPERS KPI CARDS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def kpi_card(label: str, value: str, sub: str = "", color: str = "blue") -> str:
+    return f"""
+    <div class="kpi-card {color}">
+        <div class="kpi-label">{label}</div>
+        <div class="kpi-value kpi-{color}">{value}</div>
+        {"<div class='kpi-sub'>" + sub + "</div>" if sub else ""}
+    </div>
+    """
+
+
+def render_kpis(kpis: list):
+    """Render a row of KPI cards. kpis = [(label, value, sub, color), ...]"""
+    cols = st.columns(len(kpis))
+    for col, (label, value, sub, color) in zip(cols, kpis):
+        with col:
+            st.markdown(kpi_card(label, value, sub, color), unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# EMAIL
 # ══════════════════════════════════════════════════════════════════════════════
 
 def send_email_resend(to_email: str, subject: str, body: str):
@@ -494,9 +895,8 @@ def send_email_resend(to_email: str, subject: str, body: str):
     try:
         r = requests.post(
             "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {RESEND_KEY}",
-                     "Content-Type": "application/json"},
-            json={"from": "SqueezeIndex v2.1 <onboarding@resend.dev>",
+            headers={"Authorization": f"Bearer {RESEND_KEY}", "Content-Type": "application/json"},
+            json={"from": "SqueezeIndex v3 <onboarding@resend.dev>",
                   "to": [to_email], "subject": subject, "text": body},
             timeout=15
         )
@@ -504,162 +904,337 @@ def send_email_resend(to_email: str, subject: str, body: str):
     except Exception as e:
         return False, str(e)[:120]
 
-        # ══════════════════════════════════════════════════════════════════════════════
-# TAB DASHBOARD
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PESTAÑAS
 # ══════════════════════════════════════════════════════════════════════════════
 
+tab_dash, tab_backtest, tab_scan, tab_metodologia = st.tabs([
+    "📈 Dashboard", "🎯 Backtest", "🔭 Escaneo Multi-Activo", "🧠 Metodología"
+])
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: DASHBOARD
+# ─────────────────────────────────────────────────────────────────────────────
 with tab_dash:
     if update:
-        with st.spinner(f"Descargando {selected_asset}…"):
+        with st.spinner(f"Descargando datos de {selected_asset}…"):
             df_raw = fetch_data(ticker, days)
 
         if df_raw.empty:
-            st.error("No se pudieron obtener datos.")
+            st.error("No se obtuvieron datos. Verifica el activo o la API key.")
         else:
-            with st.spinner("Calculando modelo v2.1…"):
+            with st.spinner("Calculando modelo…"):
                 df = calculate_squeeze_index(
                     df_raw.copy(), window, bb_mult, kc_mult,
                     atr_period, threshold, use_spectrum, use_vol_filter
                 )
 
             if len(df) < 30:
-                st.warning("Datos insuficientes.")
+                st.warning("Datos insuficientes para el cálculo (mínimo 30 barras).")
             else:
                 last = df.iloc[-1]
-                st.success(f"✅ {selected_asset} · {len(df)} barras · Última: {last['Date']}")
-
-                # Métricas principales
-                c1, c2, c3, c4, c5 = st.columns(5)
-                c1.metric("SqueezeIndex", f"{last['SqueezeIndex']:.1f}/100")
-                c2.metric("Trend", f"{last['Trend']:.3f}")
-                c3.metric("Dirección", last["Direction"])
-                c4.metric("Estado", "🟢 SqueezeOn" if last["SqueezeOn"] else "⚪ Sin compresión")
-                c5.metric("Lambda Ω", f"{last['Lambda']:.1f} días")
-
-                # Estadísticas
-                sq_days = df["SqueezeOn"].sum()
-                sq_det = df["SqueezeDetected"].sum()
-                num_ep = df["SqueezeEpisode"].max()
+                sq_days = int(df["SqueezeOn"].sum())
+                num_ep = int(df["SqueezeEpisode"].max())
                 pct_sq = sq_days / len(df) * 100
                 avg_si = df.loc[df["SqueezeOn"], "SqueezeIndex"].mean() if sq_days > 0 else 0
 
-                st.divider()
-                st.subheader("📊 Estadísticas del período")
-                ca, cb, cc, cd, ce = st.columns(5)
-                ca.metric("Días en compresión", f"{sq_days}")
-                cb.metric("% tiempo comprimido", f"{pct_sq:.1f}%")
-                cc.metric("Episodios detectados", f"{num_ep}")
-                cd.metric("Señales fuertes", f"{sq_det}")
-                ce.metric("SI promedio (squeeze)", f"{avg_si:.1f}")
+                # ── Banner de estado ────────────────────────────────────────
+                if last["SqueezeDetected"]:
+                    dir_icon = "↑" if last["Direction"] == "Alcista" else "↓"
+                    st.markdown(f"""
+                    <div class="signal-banner signal-active">
+                        🚨 SEÑAL ACTIVA &nbsp;·&nbsp; {dir_icon} {last['Direction'].upper()} &nbsp;·&nbsp;
+                        Fuerza {last['SignalStrength']:.0%} &nbsp;·&nbsp;
+                        SqueezeIndex {last['SqueezeIndex']:.1f}/100
+                    </div>""", unsafe_allow_html=True)
+                elif last["SqueezeOn"]:
+                    st.markdown(f"""
+                    <div class="signal-banner signal-pending">
+                        ⏳ EN COMPRESIÓN — Acumulando energía &nbsp;·&nbsp;
+                        Trend actual: {last['Trend']:.3f} (umbral: {threshold}) &nbsp;·&nbsp;
+                        Sin señal todavía
+                    </div>""", unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div class="signal-banner signal-none">
+                        ● Sin compresión activa — El precio se mueve con amplitud normal
+                    </div>""", unsafe_allow_html=True)
 
-                # Gráfico principal
+                # ── KPIs actuales ────────────────────────────────────────────
+                st.markdown('<div class="section-header">SITUACIÓN ACTUAL</div>', unsafe_allow_html=True)
+
+                si_color = "red" if last["SqueezeIndex"] > 80 else "yellow" if last["SqueezeIndex"] > 50 else "blue"
+                trend_color = "green" if last["Trend"] > threshold else "red" if last["Trend"] < -threshold else "yellow"
+                dir_color = "green" if last["Direction"] == "Alcista" else "red" if last["Direction"] == "Bajista" else "yellow"
+
+                render_kpis([
+                    ("Squeeze Index", f"{last['SqueezeIndex']:.1f}",
+                     "0=sin tensión · 100=máxima compresión", si_color),
+                    ("Trend", f"{last['Trend']:+.3f}",
+                     f"Umbral señal: ±{threshold:.2f}", trend_color),
+                    ("Dirección", last["Direction"],
+                     "Hacia dónde apunta el modelo", dir_color),
+                    ("Lambda Ω", f"{last['Lambda']:.1f}d",
+                     "Ciclo dominante del activo", "purple"),
+                    ("ATR", f"{last['ATR']:.4f}",
+                     "Volatilidad real diaria", "blue"),
+                ])
+
+                st.markdown("")
+                # ── KPIs del período ─────────────────────────────────────────
+                st.markdown('<div class="section-header">ESTADÍSTICAS DEL PERÍODO</div>', unsafe_allow_html=True)
+                render_kpis([
+                    ("Días en compresión", f"{sq_days}",
+                     f"{pct_sq:.1f}% del período analizado", "blue"),
+                    ("Episodios detectados", f"{num_ep}",
+                     "Squeezes de ≥3 días consecutivos", "purple"),
+                    ("SI promedio (en squeeze)", f"{avg_si:.1f}",
+                     "Intensidad media cuando hay compresión", "yellow"),
+                    ("Barras totales", f"{len(df)}",
+                     f"Desde {df['Date'].iloc[0]} hasta {df['Date'].iloc[-1]}", "blue"),
+                    ("BB Width actual", f"{last['BBWidth']:.4f}",
+                     "Anchura relativa de las bandas", "blue"),
+                ])
+
+                st.markdown("")
+                st.markdown('<div class="section-header">GRÁFICO PRINCIPAL</div>', unsafe_allow_html=True)
+
+                # Leyenda inline
+                leg_col1, leg_col2, leg_col3 = st.columns(3)
+                with leg_col1:
+                    st.markdown("""
+                    <div class="explain-box">
+                    <b style="color:#4da6ff">Bandas de Bollinger (azul)</b> — Rango estadístico normal del precio.<br>
+                    Cuando se estrechan, el precio está <em>comprimido</em>.
+                    </div>""", unsafe_allow_html=True)
+                with leg_col2:
+                    st.markdown("""
+                    <div class="explain-box">
+                    <b style="color:#ffc107">Canal de Keltner (amarillo)</b> — Rango basado en volatilidad real (ATR).<br>
+                    El <em>squeeze</em> ocurre cuando BB entra <em>dentro</em> de KC.
+                    </div>""", unsafe_allow_html=True)
+                with leg_col3:
+                    st.markdown("""
+                    <div class="explain-box">
+                    <b style="color:#00d68f">▲ Señales (triángulos)</b> — Momento en que hay compresión + dirección clara.<br>
+                    Verde = alcista · Rojo = bajista
+                    </div>""", unsafe_allow_html=True)
+
                 fig = build_main_chart(df, selected_asset)
                 st.plotly_chart(fig, use_container_width=True)
 
-                # Señal actual
-                if last["SqueezeDetected"]:
-                    st.success(
-                        f"🚨 **SEÑAL ACTIVA** — {last['Direction']} | "
-                        f"Fuerza {last['SignalStrength']:.2f} | "
-                        f"SqueezeIndex {last['SqueezeIndex']:.1f}"
-                    )
-                elif last["SqueezeOn"]:
-                    st.info(
-                        f"⏳ En compresión — Trend insuficiente ({last['Trend']:.3f}). "
-                        f"Threshold = {threshold}"
-                    )
+                # Panel de información de indicadores
+                with st.expander("📖 ¿Qué significa cada panel del gráfico?", expanded=False):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown("""
+                        **Panel 1 — Precio + Bandas**
+                        - El fondo verde indica que hay squeeze activo (compresión)
+                        - BB (azul): rango estadístico. KC (amarillo): rango de volatilidad
+                        - Los triángulos marcan señales fuertes con dirección
+
+                        **Panel 2 — SqueezeIndex (0 a 100)**
+                        - Azul (<50): compresión baja, mercado normal
+                        - Amarillo (50–80): compresión moderada, atención
+                        - Rojo (>80): compresión extrema, alta probabilidad de ruptura inminente
+                        """)
+                    with c2:
+                        st.markdown("""
+                        **Panel 3 — Trend Compuesto**
+                        - Verde: presión compradora dominante (señal alcista)
+                        - Rojo: presión vendedora dominante (señal bajista)
+                        - Las líneas punteadas marcan el umbral mínimo para activar señal
+                        - Calculado con 4 componentes: slope largo, slope corto, MFI y ROC
+
+                        **Panel 4 — Lambda Ω (ciclo dominante)**
+                        - Días que dura cada ciclo de precio en este activo
+                        - Estimado con análisis espectral Welch (muy robusto al ruido)
+                        - Se usa para calibrar el Trend y el SqueezeIndex automáticamente
+                        """)
+
     else:
-        st.info("👈 Selecciona activo y parámetros, luego pulsa **Calcular**.")
+        st.markdown("""
+        <div style="text-align:center; padding: 80px 20px; color: #6b7685;">
+            <div style="font-size:48px; margin-bottom:16px;">〰️</div>
+            <div style="font-family:'IBM Plex Mono',monospace; font-size:16px; margin-bottom:8px;">
+                Selecciona un activo y pulsa <b style="color:#4da6ff">▶ Calcular</b>
+            </div>
+            <div style="font-size:13px;">en la barra lateral para iniciar el análisis</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB BACKTEST REAL
-# ══════════════════════════════════════════════════════════════════════════════
-
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: BACKTEST
+# ─────────────────────────────────────────────────────────────────────────────
 with tab_backtest:
-    st.subheader("🎯 Backtest Real — Episodios de Compresión (v2.1)")
+    st.markdown("## 🎯 Backtest Real por Episodios")
+
     st.markdown("""
-    **Metodología correcta**: Se registra la dirección prevista al **finalizar** cada episodio de squeeze 
-    y se mide el retorno real en los N días **siguientes**. Esto es lo que importa para operar.
-    """)
+    <div class="explain-box">
+    <b>¿Cómo funciona este backtest?</b><br>
+    Cuando un episodio de squeeze termina (≥3 días de compresión consecutiva), se registra la dirección
+    que predecía el modelo en ese momento y se mide el retorno real del precio en los N días siguientes.
+    La "señal" entra al precio de cierre del último día del episodio y sale N días después.
+    <br><br>
+    <b>Retorno alineado</b> = si la señal era alcista, se toma el retorno largo. Si era bajista, se simula un corto.
+    Así medimos si el modelo aportó información útil, no solo si el mercado subió.
+    </div>
+    """, unsafe_allow_html=True)
 
-    fwd_days = st.slider("Ventana de medición post-squeeze (días)", 2, 20, 5, key="bt_fwd")
+    fwd_days = st.slider(
+        "Ventana de medición post-squeeze (días)",
+        min_value=2, max_value=20, value=5,
+        help="Cuántos días después del squeeze se mide el retorno. 5 días = 1 semana de trading."
+    )
 
-    if update:
-        if "df" in dir() and not df.empty and "SqueezeEpisode" in df.columns:
-            with st.spinner("Calculando backtest…"):
-                bt = run_backtest(df, forward_days=fwd_days)
+    if update and "df" in dir() and not df.empty and "SqueezeEpisode" in df.columns:
+        with st.spinner("Calculando backtest…"):
+            bt, metrics = run_backtest(df, forward_days=fwd_days)
 
-            if bt.empty:
-                st.warning("No hay episodios suficientes (mínimo 3 días consecutivos).")
-            else:
-                hits = (bt["Acierto"] == "✅").sum()
-                total = len(bt)
-                pct_hit = hits / total * 100 if total > 0 else 0
-                avg_ret_hit = bt.loc[bt["Acierto"] == "✅", "Retorno_%"].mean()
-                avg_ret_miss = bt.loc[bt["Acierto"] == "❌", "Retorno_%"].mean()
-                avg_si_hit = bt.loc[bt["Acierto"] == "✅", "SI_Max"].mean()
+        if bt.empty:
+            st.warning("No hay episodios suficientes. Prueba con más días de histórico o parámetros menos restrictivos.")
+        else:
+            # ── Métricas principales del backtest ────────────────────────────
+            st.markdown('<div class="section-header">MÉTRICAS DE RENDIMIENTO</div>', unsafe_allow_html=True)
 
-                # KPIs
-                bk1, bk2, bk3, bk4, bk5 = st.columns(5)
-                bk1.metric("Precisión global", f"{pct_hit:.1f}%", f"{hits}/{total}")
-                bk2.metric("Episodios totales", f"{total}")
-                bk3.metric("Retorno medio ✅", f"{avg_ret_hit:.2f}%")
-                bk4.metric("Retorno medio ❌", f"{avg_ret_miss:.2f}%")
-                bk5.metric("SI medio aciertos", f"{avg_si_hit:.1f}")
+            wr = metrics["win_rate"]
+            wr_color = "green" if wr > 55 else "yellow" if wr > 45 else "red"
+            pf = metrics["profit_factor"]
+            pf_color = "green" if (pf and pf > 1.5) else "yellow" if (pf and pf > 1.0) else "red"
+            exp_color = "green" if metrics["expectancy"] > 0 else "red"
+            sharpe_color = "green" if metrics["sharpe"] > 1 else "yellow" if metrics["sharpe"] > 0 else "red"
 
-                # Gráfico
-                fig_bt = build_backtest_chart(bt)
-                st.plotly_chart(fig_bt, use_container_width=True)
+            render_kpis([
+                ("Win Rate", f"{wr:.1f}%",
+                 f"{int(wr/100*metrics['total'])}/{metrics['total']} aciertos", wr_color),
+                ("Expectancy / op.", f"{metrics['expectancy']:+.2f}%",
+                 "Ganancia esperada por operación", exp_color),
+                ("Profit Factor", f"{pf:.2f}" if pf and not np.isnan(pf) else "N/A",
+                 "Bruto ganado / bruto perdido", pf_color),
+                ("Sharpe aprox.", f"{metrics['sharpe']:.2f}",
+                 f"Anualizado · ventana {fwd_days}d", sharpe_color),
+                ("Max. Drawdown", f"{metrics['max_dd']:.2f}%",
+                 "Peor racha acumulada", "red"),
+            ])
 
-                
-                # Tabla detallada
-                with st.expander("📋 Tabla completa de episodios", expanded=True):
-                    st.dataframe(
-                       bt.style.map(
-                            lambda v: "color: #00ff88" if v == "✅" else "color: #ff4466" if v == "❌" else "",
-                            subset=["Acierto"]
-                        ),
-                        use_container_width=True
-                    )
-                # Análisis por intensidad
-                st.subheader("🔬 ¿La intensidad del squeeze mejora la precisión?")
-                q33 = bt["SI_Max"].quantile(0.33)
-                q66 = bt["SI_Max"].quantile(0.66)
+            st.markdown("")
+
+            # Segunda fila de métricas
+            render_kpis([
+                ("Episodios analizados", f"{metrics['total']}",
+                 "Total de squeezes con señal medible", "blue"),
+                ("Ganancia media ✅", f"{metrics['avg_win']:+.2f}%",
+                 "Promedio de aciertos", "green"),
+                ("Pérdida media ❌", f"{metrics['avg_loss']:+.2f}%",
+                 "Promedio de fallos", "red"),
+                ("Payoff Ratio", f"{metrics['payoff']:.2f}" if not np.isnan(metrics['payoff']) else "N/A",
+                 "Ganancia media / pérdida media", "yellow"),
+                ("Calmar Ratio", f"{metrics['calmar']:.2f}" if not np.isnan(metrics['calmar']) else "N/A",
+                 "Retorno total / max drawdown", "purple"),
+            ])
+
+            st.markdown("")
+
+            # Explicación de métricas
+            with st.expander("🔍 ¿Qué significa cada métrica?", expanded=False):
+                st.markdown("""
+                | Métrica | Qué mide | Bueno si… |
+                |---|---|---|
+                | **Win Rate** | % de episodios en que el precio se movió en la dirección predicha | > 55% |
+                | **Expectancy** | Ganancia media esperada por operación | > 0% |
+                | **Profit Factor** | € ganados totales / € perdidos totales | > 1.5 |
+                | **Sharpe aprox.** | Retorno por unidad de riesgo, anualizado | > 1.0 |
+                | **Max Drawdown** | Peor pérdida acumulada seguida | Lo más cercano a 0 |
+                | **Payoff Ratio** | ¿Ganas más cuando aciertas de lo que pierdes cuando fallas? | > 1.0 |
+                | **Calmar Ratio** | Retorno total dividido por el peor drawdown | > 1.0 |
+
+                **Nota importante**: Estos son retornos brutos sin costes de transacción, slippage ni tamaño de posición.
+                Sirven para evaluar si el *modelo tiene información*, no como proyección de beneficios reales.
+                """)
+
+            # ── Gráfico de backtest ──────────────────────────────────────────
+            st.markdown('<div class="section-header">RETORNOS POR EPISODIO + EQUITY CURVE</div>', unsafe_allow_html=True)
+            fig_bt = build_backtest_chart(bt, metrics, fwd_days)
+            st.plotly_chart(fig_bt, use_container_width=True)
+
+            # Leyenda del gráfico
+            st.markdown("""
+            <div class="explain-box">
+            <b>Panel superior:</b> Retorno alineado de cada episodio (verde = modelo acertó, rojo = falló).
+            Las barras de error muestran el rango MFE/MAE (máximo favorable y máximo adverso) durante la ventana de medición.<br>
+            <b>Panel inferior:</b> Equity curve acumulada (azul) y drawdown (rojo). Permite ver si el modelo
+            tiene una ventaja estadística consistente o es puntual.
+            </div>
+            """, unsafe_allow_html=True)
+
+            # ── Análisis por intensidad ─────────────────────────────────────
+            st.markdown('<div class="section-header">¿MAYOR INTENSIDAD = MEJOR SEÑAL?</div>', unsafe_allow_html=True)
+
+            if len(bt) >= 6:
+                q33 = bt["SI Máx."].quantile(0.33)
+                q66 = bt["SI Máx."].quantile(0.66)
                 bt["Intensidad"] = pd.cut(
-                    bt["SI_Max"],
+                    bt["SI Máx."],
                     bins=[-np.inf, q33, q66, np.inf],
-                    labels=["Baja", "Media", "Alta"]
+                    labels=["🔵 Baja", "🟡 Media", "🔴 Alta"]
                 )
-                intensidad_summary = bt.groupby("Intensidad").apply(
+                int_summary = bt.groupby("Intensidad", observed=True).apply(
                     lambda g: pd.Series({
-                        "N": len(g),
-                        "Precisión": f"{(g['Acierto']=='✅').sum()/len(g)*100:.1f}%",
-                        "Ret_medio": f"{g['Retorno_%'].mean():.2f}%",
-                        "SI_medio": f"{g['SI_Max'].mean():.1f}",
+                        "N episodios": len(g),
+                        "Win Rate": f"{(g['✓']=='✅').sum()/len(g)*100:.1f}%",
+                        "Ret. medio (%)": f"{g['Ret. Alineado (%)'].mean():+.2f}%",
+                        "SI medio": f"{g['SI Máx.'].mean():.1f}",
+                        "MFE medio (%)": f"{g['MFE (%)'].mean():.2f}%",
+                        "MAE medio (%)": f"{g['MAE (%)'].mean():.2f}%",
                     })
                 ).reset_index()
-                st.dataframe(intensidad_summary, use_container_width=True)
-        else:
-            st.info("Primero pulsa **Calcular** en la pestaña Dashboard.")
+                st.dataframe(int_summary, use_container_width=True)
+                st.markdown("""
+                <div class="explain-box">
+                Si el win rate y el retorno medio son más altos en intensidad "Alta", el modelo tiene
+                poder predictivo genuino. Si son similares entre grupos, la intensidad no mejora la señal.
+                </div>
+                """, unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB ESCANEO MULTI-ACTIVO
-# ══════════════════════════════════════════════════════════════════════════════
+            # ── Tabla completa ────────────────────────────────────────────────
+            with st.expander("📋 Ver todos los episodios en detalle", expanded=False):
+                display_bt = bt.drop(columns=["_hit", "_aligned_return"], errors="ignore")
+                st.dataframe(
+                    display_bt.style.map(
+                        lambda v: "color: #00d68f; font-weight:600" if v == "✅"
+                        else "color: #ff4757; font-weight:600" if v == "❌" else "",
+                        subset=["✓"]
+                    ).map(
+                        lambda v: "color: #00d68f" if isinstance(v, (int, float)) and v > 0
+                        else "color: #ff4757" if isinstance(v, (int, float)) and v < 0 else "",
+                        subset=["Ret. Alineado (%)"]
+                    ),
+                    use_container_width=True,
+                    height=360,
+                )
+    else:
+        st.info("👈 Pulsa **▶ Calcular** en la barra lateral para ejecutar el backtest.")
 
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: ESCANEO MULTI-ACTIVO
+# ─────────────────────────────────────────────────────────────────────────────
 with tab_scan:
-    st.subheader("🔭 Escaneo Multi-Activo")
-    st.caption("Escanea todos los activos y muestra señales activas ahora mismo.")
+    st.markdown("## 🔭 Escaneo Multi-Activo")
+    st.caption("Analiza todos los activos y muestra cuáles tienen señales activas ahora.")
 
-    scan_days = st.slider("Días para el escaneo", 60, 365, 120, key="scan_days")
+    scan_days = st.slider("Días de histórico para el escaneo", 60, 365, 120, key="scan_days")
     scan_btn = st.button("🔭 Escanear todos los activos", type="primary")
 
     if scan_btn:
         results = []
-        prog = st.progress(0)
+        prog_bar = st.progress(0)
+        status_txt = st.empty()
         asset_list = list(ASSETS.items())
 
         for idx, (name, tk) in enumerate(asset_list):
-            prog.progress((idx + 1) / len(asset_list), text=f"Analizando {name}…")
+            prog_bar.progress((idx + 1) / len(asset_list))
+            status_txt.markdown(f"<small style='color:#6b7685'>Analizando {name}…</small>", unsafe_allow_html=True)
             df_s = fetch_data(tk, scan_days)
             if df_s.empty or len(df_s) < 40:
                 continue
@@ -669,164 +1244,227 @@ with tab_scan:
             if len(df_s) < 10:
                 continue
             last_s = df_s.iloc[-1]
-            bt_s = run_backtest(df_s, forward_days=5)
-            prec_s = (bt_s["Acierto"] == "✅").sum() / len(bt_s) * 100 if not bt_s.empty else None
-            num_ep = int(df_s["SqueezeEpisode"].max())
+            bt_s, met_s = run_backtest(df_s, forward_days=5)
+            prec_s = met_s.get("win_rate") if met_s else None
+            exp_s = met_s.get("expectancy") if met_s else None
 
             results.append({
                 "Activo": name,
-                "SqueezeOn": "🟢" if last_s["SqueezeOn"] else "⚪",
                 "Señal": "🚨 FUERTE" if last_s["SqueezeDetected"] else (
                          "⏳ LEVE" if last_s["SqueezeOn"] else "—"),
                 "SI": round(last_s["SqueezeIndex"], 1),
                 "Trend": round(last_s["Trend"], 3),
                 "Dirección": last_s["Direction"],
-                "Episodios": num_ep,
-                "Precisión_bt": f"{prec_s:.0f}%" if prec_s is not None else "—",
-                "Lambda_Ω": round(last_s["Lambda"], 1),
+                "Lambda Ω": round(last_s["Lambda"], 1),
                 "Precio": round(last_s["Close"], 4),
+                "Ep. históricos": int(df_s["SqueezeEpisode"].max()),
+                "Win Rate bt.": f"{prec_s:.0f}%" if prec_s is not None else "—",
+                "Expectancy bt.": f"{exp_s:+.2f}%" if exp_s is not None else "—",
             })
 
-        prog.empty()
+        prog_bar.empty()
+        status_txt.empty()
 
         if results:
             df_res = pd.DataFrame(results).sort_values("SI", ascending=False)
-            st.dataframe(df_res, use_container_width=True, height=420)
+
+            # Gráfico de barras SI
+            st.markdown('<div class="section-header">SQUEEZE INDEX ACTUAL POR ACTIVO</div>',
+                        unsafe_allow_html=True)
+            fig_scan = build_scan_chart(df_res)
+            st.plotly_chart(fig_scan, use_container_width=True)
+
+            # Tabla
+            st.markdown('<div class="section-header">TABLA COMPLETA</div>', unsafe_allow_html=True)
+            st.dataframe(
+                df_res.style.apply(
+                    lambda col: [
+                        "background-color: rgba(0,214,143,0.1); color: #00d68f; font-weight:600"
+                        if v == "🚨 FUERTE" else
+                        "background-color: rgba(255,193,7,0.08); color: #ffc107"
+                        if v == "⏳ LEVE" else ""
+                        for v in col
+                    ] if col.name == "Señal" else [""] * len(col),
+                    axis=0
+                ),
+                use_container_width=True,
+                height=380,
+            )
 
             # Email
             st.divider()
-            user_email = st.text_input("📧 Enviar reporte a:", placeholder="tu@email.com", key="scan_email")
-            if st.button("Enviar reporte", key="scan_send"):
+            ecol1, ecol2 = st.columns([3, 1])
+            with ecol1:
+                user_email = st.text_input("📧 Email para recibir el reporte:", placeholder="tu@email.com")
+            with ecol2:
+                st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+                send_btn = st.button("Enviar reporte")
+
+            if send_btn and user_email:
+                active = df_res[df_res["Señal"] != "—"]
                 signals_str = "\n".join(
-                    f"• {r['Activo']} | {r['Señal']} | {r['Dirección']} | SI {r['SI']} | Precisión {r['Precisión_bt']}"
-                    for _, r in df_res.iterrows() if r["SqueezeOn"] != "⚪"
-                ) or "Sin señales activas"
+                    f"• {r['Activo']}: {r['Señal']} | {r['Dirección']} | SI {r['SI']} | WR {r['Win Rate bt.']}"
+                    for _, r in active.iterrows()
+                ) or "Sin señales activas en este momento."
                 body = (
-                    f"SqueezeIndex v2.1 — {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}\n\n"
-                    f"Parámetros: window={window} bb={bb_mult} kc={kc_mult} threshold={threshold}\n\n"
-                    f"=== SEÑALES ACTIVAS ===\n{signals_str}\n"
+                    f"SqueezeIndex v3.0 — Escaneo {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+                    f"Parámetros: window={window} · BB={bb_mult} · KC={kc_mult} · threshold={threshold}\n\n"
+                    f"=== SEÑALES ACTIVAS ===\n{signals_str}\n\n"
+                    f"=== TODOS LOS ACTIVOS ===\n"
+                    + "\n".join(f"• {r['Activo']}: SI={r['SI']} | {r['Dirección']}" for _, r in df_res.iterrows())
                 )
                 ok, msg = send_email_resend(user_email, f"Squeeze Scan {datetime.now(UTC).date()}", body)
-                st.success("Enviado ✅") if ok else st.error(msg)
+                st.success("Enviado ✅") if ok else st.error(f"Error: {msg}")
         else:
-            st.warning("No se obtuvieron resultados del escaneo.")
+            st.warning("No se obtuvieron resultados. Revisa la API key.")
 
-            # ══════════════════════════════════════════════════════════════════════════════
-# TAB METODOLOGÍA — Totalmente adaptada al código unificado v2.1
-# (Glosario y explicaciones actualizadas según los nuevos cálculos: Welch, Lorentzian, 4 componentes, episodios, backtest post-episodio)
-# ══════════════════════════════════════════════════════════════════════════════
-
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: METODOLOGÍA
+# ─────────────────────────────────────────────────────────────────────────────
 with tab_metodologia:
+    st.markdown("## 🧠 Metodología — SqueezeIndex v3.0")
+
     st.markdown("""
-    ## 〰️ Metodología — SqueezeIndex v2.1 (Best of Both)
+    <div class="explain-box">
+    El modelo trata el precio como una <b>señal ondulatoria</b>. Como el mar: hay momentos de calma
+    (compresión, energía acumulada) y momentos de oleaje (expansión, energía liberada).
+    La hipótesis central es que la magnitud de la expansión es proporcional a la energía acumulada durante la compresión.
+    </div>
+    """, unsafe_allow_html=True)
 
-    ### El modelo como física de ondas
+    tab_glosario, tab_calculo, tab_mejoras, tab_limitaciones = st.tabs([
+        "📖 Glosario", "🔢 Cómo se calcula", "⬆️ Mejoras v3.0", "⚠️ Limitaciones"
+    ])
 
-    El precio de un activo financiero se trata como una **señal ondulatoria** que, como las olas del mar,
-    alterna entre estados de alta energía (volatilidad) y baja energía (compresión). Cuando la energía
-    se acumula sin liberarse, el sistema se comporta como un **oscilador subamortiguado** cargado:
-    la liberación posterior es proporcional a la energía almacenada.
-
-    Este principio físico sigue siendo el corazón del modelo, pero ahora calculado con mayor rigor matemático.
-
-    ---
-    """)
-
-    with st.expander("📖 Glosario completo (actualizado a v2.1)", expanded=True):
+    with tab_glosario:
         st.markdown("""
-        **Conceptos básicos (explicados para principiantes, adaptados al nuevo código):**
+        ### Conceptos clave (de más simple a más técnico)
 
-        - **Compresión (Squeeze)**  
-          Es cuando el precio deja de moverse fuerte y se queda “encerrado” en un rango muy estrecho durante **varios días consecutivos**.  
-          *Analogía del mar*: El agua está tan plana que parece que no pasa nada… pero la energía se está acumulando debajo.  
-          *En v2.1*: Solo se considera compresión real cuando dura **mínimo 3 días seguidos** (episodio). Esto elimina ruido de 1-2 días.
+        **Squeeze (compresión)**
+        El precio lleva varios días moviéndose poco, como si estuviera "apretado" entre dos muros.
+        En términos técnicos: las Bandas de Bollinger (basadas en desviación estándar) entran dentro
+        del Canal de Keltner (basado en ATR). Mínimo de duración: **3 días consecutivos** (un episodio).
 
-        - **SqueezeOn (la luz verde)**  
-          Es la señal clara que dice: “¡En este momento el precio está realmente comprimido!”  
-          Aparece como fondo verde en el gráfico principal.  
-          *Analogía*: Es el semáforo en verde que te avisa “el resorte ya está muy tenso, prepárate”.  
-          *En v2.1*: Se activa cuando las Bandas de Bollinger entran completamente dentro del Canal de Keltner.
+        **SqueezeIndex (0 a 100)**
+        Cuánta tensión hay acumulada en este momento. Se calcula combinando:
+        - Percentil del ancho de BB respecto a su propio historial (qué tan estrecho está *para este activo*)
+        - Factor de calidad Lambda (Lorentziana) — penaliza si el ciclo es irregular
 
-        - **SqueezeIndex (actualizado)**  
-          Nuestro medidor principal de “cuánta tensión hay acumulada”.  
-          **Cómo se calcula ahora (v2.1)**:  
-          1. Se mide qué tan estrecho está el BB respecto a su propio historial (percentil).  
-          2. Se multiplica por un factor de calidad de Lambda (Lorentzian).  
-          3. Se normaliza a escala 0-100.  
-          *Analogía*: Es el velocímetro del resorte, pero ahora calibrado para que 80-90 signifique “extremadamente cargado” independientemente del activo.  
-          *Qué pasa si el índice es muy alto (>80)*: La probabilidad de un movimiento grande aumenta significativamente.
+        Un valor de 80+ no significa "comprar/vender". Significa que la probabilidad de un movimiento
+        grande *en algún momento próximo* es estadísticamente más alta que la media.
 
-        - **Lambda (Λ) — Longitud de onda dominante (Welch PSD)**  
-          Mide el “ritmo natural” de ese activo concreto.  
-          **Cómo se calcula ahora (v2.1)**: Usamos el método **Welch** (estimador espectral de potencia). Divide la ventana en segmentos, calcula la FFT de cada uno y encuentra la frecuencia con más potencia.  
-          *Por qué Welch y no conteo de picos*: Es mucho más resistente al ruido y detecta la periodicidad estadísticamente dominante, no solo la más reciente.  
-          *Analogía*: Cada activo tiene su propio “latido”. El oro late despacio, el Bitcoin late rápido. Lambda lo detecta automáticamente.
+        **Lambda Ω (ciclo dominante)**
+        Cada activo tiene su propio ritmo. El oro oscila más despacio que el Bitcoin.
+        Lambda mide cuántos días dura un ciclo completo (de valle a pico a valle) usando
+        análisis espectral de Welch, que es mucho más robusto que simplemente contar picos.
 
-        - **Trend (Tendencia) — 4 componentes**  
-          Te dice hacia dónde es más probable que salte el precio cuando termine la compresión.  
-          **Cómo se calcula ahora (v2.1)**:  
-          - 35% Slope largo (ventana = Lambda)  
-          - 25% Slope corto (6 barras)  
-          - 25% MFI (presión compradora/vendedora)  
-          - 15% ROC normalizado por ATR  
-          Todo normalizado con `tanh` para controlar valores extremos.  
-          *Analogía del mar*: Es como leer la dirección del viento + la fuerza de la corriente + la presión del agua antes de que llegue la ola grande.
+        **Trend (dirección de la tensión)**
+        Cuando hay compresión, el modelo intenta determinar hacia dónde *ya está inclinado* el precio
+        mediante 4 componentes ponderados: pendiente larga, pendiente corta, flujo de dinero (MFI) y velocidad (ROC).
 
-        - **SqueezeDetected (la señal más poderosa)**  
-          Se enciende solo cuando hay **mucha compresión + una dirección clara + régimen de volatilidad baja**.  
-          *En v2.1*: Además del Trend > threshold, aplicamos un filtro que ignora señales cuando el ATR está en percentil alto (mercados ya muy nerviosos).  
-          *Qué pasa cuando se activa*: Estadísticamente, el precio tiende a moverse con fuerza en la dirección del Trend en los días siguientes.
+        **Señal SqueezeDetected**
+        La señal más restrictiva. Se activa solo cuando:
+        1. Hay squeeze activo (SqueezeOn = ✓)
+        2. El Trend supera el umbral configurado
+        3. El ATR no está en el 25% más alto de su propio historial (mercado ya no está explotando)
 
-        **Parámetros del modelo (y qué pasa si los cambias) — actualizado v2.1:**
-
-        - **Ventana = 20 días** (por defecto)  
-          Es la ventana principal para BB, EMA y cálculo de Lambda.  
-          *Qué pasa si la subes a 50 días*: Detecta compresiones más largas y “históricas”.  
-          *Qué pasa si la bajas a 10 días*: Reacciona más rápido, pero también da más señales falsas (ruido).
-
-        - **Bandas de Bollinger (BB Mult = 2.0)**  
-          Definen el rango “normal” del precio.  
-          *Qué pasa si subes a 2.5*: Detectas menos squeezes (más conservador).  
-          *Qué pasa si bajas a 1.5*: Detectas más squeezes, pero también más falsos (más agresivo).
-
-        - **Canales de Keltner (KC Mult = 1.5)**  
-          Definen el túnel de volatilidad real.  
-          SqueezeOn se activa cuando BB entra completamente dentro de KC.
-
-        - **ATR Period = 20**  
-          Mide la volatilidad real. Se usa tanto para Keltner como para normalizar el Trend.
-
-        - **Trend Threshold = 0.15**  
-          Nivel mínimo de fuerza de dirección para activar SqueezeDetected.  
-          *Qué pasa si lo subes a 0.25*: Solo las señales más fuertes y claras.  
-          *Qué pasa si lo bajas a 0.05*: Más señales, pero más ruido.
-
-        - **Filtro de régimen de volatilidad (nuevo en v2.1)**  
-          Solo se activan señales cuando el ATR está por debajo del percentil 75.  
-          Evita operar en mercados ya muy volátiles donde el “squeeze” pierde significado.
+        **Episodio**
+        Período mínimo de 3 días consecutivos de compresión. El backtest opera al *final* de cada episodio.
         """)
 
-    st.markdown("""
-    ---
+    with tab_calculo:
+        st.markdown("""
+        ### Fórmulas detalladas
 
-    ### Mejoras técnicas v2.1 (por qué es mejor que la versión anterior)
+        **Bandas de Bollinger:**
+        ```
+        EMA(n) = media exponencial de cierre en n períodos
+        STD(n) = desviación estándar de cierre en n períodos
+        Upper BB = EMA + mult_BB × STD
+        Lower BB = EMA - mult_BB × STD
+        BB Width = (Upper BB - Lower BB) / EMA
+        ```
 
-    | Componente              | Versión anterior          | v2.1 (código unificado)                              | Beneficio real |
-    |-------------------------|---------------------------|-------------------------------------------------------|---------------|
-    | **Lambda**              | Conteo simple de picos    | Welch PSD vectorizado                                 | Mucho más robusto al ruido |
-    | **SqueezeIndex**        | 1/BBWidth × 1/Lambda      | Percentil relativo + Lorentzian quality               | Comparable entre activos + mejor manejo de colas |
-    | **Trend**               | 3 componentes             | 4 componentes (slope largo + corto + MFI + ROC) + tanh| Mayor estabilidad estadística |
-    | **Episodios**           | No existían               | Detección automática de ≥3 días consecutivos          | Elimina falsos squeezes de 1-2 días |
-    | **Backtest**            | Durante la compresión     | Retorno **post-episodio** (N días después)            | Mide el verdadero poder predictivo |
-    | **Señal**               | Binaria                   | SignalStrength (0-1) + filtro de régimen de vol       | Más selectiva y segura |
+        **Canal de Keltner:**
+        ```
+        ATR(n) = media exponencial del True Range en n períodos
+        Upper KC = EMA + mult_KC × ATR
+        Lower KC = EMA - mult_KC × ATR
+        ```
 
-    **Principio fundamental (estilo Jim Simons):**  
-    Nunca midas si el modelo “acierta” durante la compresión.  
-    La única medición válida es el retorno **después** de que el episodio de compresión termine.
+        **SqueezeOn:**
+        ```
+        SqueezeOn = (Upper BB ≤ Upper KC) AND (Lower BB ≥ Lower KC)
+        ```
 
-    Este modelo no promete ganancias. Solo te avisa, con rigor matemático y explicaciones claras, cuándo el mercado está “cargado” y listo para moverse.
+        **Lambda Ω (Welch PSD):**
+        ```
+        1. Tomar ventana de N precios suavizados (EMA5)
+        2. Calcular densidad espectral de potencia con método Welch
+        3. Encontrar frecuencia dominante f*
+        4. Lambda = 1 / f*  (longitud de onda en días)
+        ```
 
-    ---
-    """)
+        **SqueezeIndex:**
+        ```
+        bb_percentile = rank_pct(BBWidth, ventana=3×N)  # percentil histórico
+        compression = 1 - bb_percentile  # 0=normal, 1=máxima compresión
+        lambda_quality = 1 / (1 + ((Lambda - N/3) / (N/4))²)  # Lorentziana
+        raw_SI = compression / BBWidth
+        SI = (raw_SI / max_rolling(raw_SI)) × 100 × lambda_quality
+        ```
 
-    st.success("✅ App versión 2.1 — Best of Both: Metodología clara + Edge cuantitativo real unificado")
+        **Trend (4 componentes):**
+        ```
+        slope_largo  = pendiente(precios, ventana=Lambda) / ATR  → tanh(×5)  [35%]
+        slope_corto  = pendiente(precios, ventana=6) / ATR        → tanh(×5)  [25%]
+        MFI_score    = (MFI - 50) / 50                            [25%]
+        ROC_norm     = tanh(ROC_5d / (ATR/Close) × 3)            [15%]
+        Trend = EMA2(0.35×SL + 0.25×SC + 0.25×MFI + 0.15×ROC)
+        ```
+        """)
+
+    with tab_mejoras:
+        st.markdown("""
+        | Componente | v2.1 | v3.0 | Impacto |
+        |---|---|---|---|
+        | **KPIs Dashboard** | Métricas en bruto sin contexto | KPI cards con color + explicación inline | Más accionable |
+        | **Backtest** | Retorno raw sin alineación de dirección | Retorno alineado (long/short) + MFE/MAE + equity curve | Mide poder predictivo real |
+        | **Métricas backtest** | Solo win rate y retorno medio | Win rate, expectancy, profit factor, Sharpe, drawdown, calmar | Visión completa del edge |
+        | **Gráficos** | Colores inconsistentes, sin leyendas | Paleta unificada, leyendas inline, anotaciones de panel | Más legible |
+        | **Indicadores** | Sin umbral visual en Trend | Líneas punteadas en ±threshold | Saber cuándo se activa la señal |
+        | **Escaneo** | Tabla sola | Tabla + gráfico de barras horizontal | Más rápido de leer |
+        | **Retorno en backtest** | Solo "retorno de precio" | Retorno alineado: alcista=long, bajista=short | Mide el modelo, no el mercado |
+        """)
+
+    with tab_limitaciones:
+        st.markdown("""
+        ### Lo que este modelo NO hace
+
+        ⚠️ **No predice el momento exacto de la ruptura**. Solo indica que existe energía acumulada.
+        La ruptura puede ocurrir en 1 día o en 15 días.
+
+        ⚠️ **No incluye costes de transacción**. Los retornos del backtest son brutos.
+        En mercados reales, spreads, comisiones y slippage reducirán los números.
+
+        ⚠️ **Sample size limitado**. Con 365 días y parámetros por defecto, pueden generarse
+        solo 8–15 episodios. Eso es insuficiente para conclusiones estadísticas sólidas.
+        Usa 2–3 años mínimo para el backtest.
+
+        ⚠️ **Sin gestión de posición**. El backtest asume entrada/salida fija.
+        Un sistema real necesitaría stops, targets y sizing.
+
+        ⚠️ **Look-ahead bias eliminado** (la señal se genera *antes* de medir el retorno),
+        pero el backtest sigue siendo in-sample. Para validación real, reservar 1/3 de los datos
+        como out-of-sample.
+
+        ### Uso recomendado
+
+        ✅ Como **scanner de atención**: qué activos tienen energía acumulada ahora mismo.
+
+        ✅ Como **contexto de decisión**: el squeeze no es entrada, es contexto para otras señales.
+
+        ✅ Como **análisis de régimen**: detectar si el mercado está en compresión o expansión.
+        """)
+
+    st.success("✅ SqueezeIndex v3.0 — Diseño claro · Backtest riguroso · Metodología transparente")
