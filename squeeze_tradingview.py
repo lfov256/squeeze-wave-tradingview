@@ -16,9 +16,10 @@ st.caption(f"Última ejecución: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S 
 tab_dashboard, tab_info = st.tabs(["📈 Dashboard", "🧠 Info"])
 
 with tab_info:
+  
    # ===================== EXPLICACIÓN INICIAL =====================
 st.markdown("""
-### ¿Qué es el Squeezeindex? (La matemática de las olas en los mercados)
+### ¿Qué es el Squeezeindex?
 
 Imagina que el precio de una acción, del oro, del petróleo o del Bitcoin **es exactamente como el mar**.  
 
@@ -35,7 +36,7 @@ Este modelo (inspirado en las ecuaciones que describen ondas y volatilidad) hace
 3. Intenta estimar hacia dónde es más probable que salte el precio cuando se libere.
 
 Es como tener un radar de olas antes de que rompan.  
-No predice el futuro con certeza (nadie puede), pero te avisa con cierta objetividad cuándo el mercado está “cargado” y listo para moverse.
+No predice el futuro con certeza, pero te avisa con cierta objetividad cuándo el mercado está “cargado” y listo para moverse.
 """)
 
 with st.expander("📖 Glosario completo (explicado para principiantes)", expanded=True):
@@ -108,7 +109,6 @@ with st.expander("📖 Glosario completo (explicado para principiantes)", expand
   Es el nivel mínimo de “fuerza de dirección” que necesitamos para decir “este Squeeze tiene una tendencia clara”.  
   *Qué pasa si lo subes a 0.25*: Solo se activan las señales más fuertes y claras (menos señales, pero de mayor calidad).  
   *Qué pasa si lo bajas a 0.05*: Se activan más señales, incluso las débiles (más oportunidades, pero también más ruido y falsos positivos).
-
 """)
 
 # ===================== API KEY =====================
