@@ -615,7 +615,7 @@ with tab_backtest:
                 # Tabla detallada
                 with st.expander("📋 Tabla completa de episodios", expanded=True):
                     st.dataframe(
-                        bt.style.applymap(
+                       bt.style.map(
                             lambda v: "color: #00ff88" if v == "✅" else "color: #ff4466" if v == "❌" else "",
                             subset=["Acierto"]
                         ),
