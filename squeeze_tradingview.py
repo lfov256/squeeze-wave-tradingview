@@ -21,9 +21,7 @@ with tab_info:
 ### ¿Qué es el Squeezeindex?
 
 Imagina que el precio de una acción, del oro, del petróleo o del Bitcoin es como **el mar**.
-A veces hay olas grandes y el agua se mueve mucho.
-
-Otras veces el mar se queda **casi plano y en calma total** durante muchos días seguidos.
+A veces hay olas grandes y el agua se mueve mucho. Otras veces el mar se queda **casi plano y en calma total** durante muchos días seguidos.
 A esa calma extrema la llamamos **compresión** o “Squeeze”.
 
 Este modelo:
@@ -63,24 +61,27 @@ Este modelo:
       Se enciende solo cuando hay **mucha compresión + una dirección clara**.
       Estas son las situaciones que más nos interesan para prestar atención.
     
-    
     **Parámetros internos del modelo:**
    
-    - **Ventana = 20 días**
-      El modelo mira los últimos 20 días para entender cómo se está comportando el precio.
-      (Es como usar una foto reciente del mercado).
+    - **Ventana = 20 días**  
+      El modelo mira únicamente los últimos 20 días de precio para hacer sus cálculos.  
+      *Analogía*: Es como tomar una foto reciente del mercado en vez de mirar su historial. Así se enfoca en cómo se está comportando **ahora mismo**.
     
-    - **Bandas de Bollinger (BB Mult = 2.0)**
-      Son dos bandas azules que marcan el rango “normal” del precio. Cuando se estrechan mucho, indican calma.
+    - **Bandas de Bollinger (BB Mult = 2.0)**  
+      Son dos bandas azules que marcan el rango “normal” donde suele moverse el precio.  
+      El número 2.0 decide lo anchas que son. Cuando estas bandas se juntan y se estrechan mucho, significa que el precio está muy calmado y con poca volatilidad.
     
-    - **Canales de Keltner (KC Mult = 1.5)**
-      Otro túnel más ajustado que usa la volatilidad real. Cuando las bandas azules entran completamente dentro de este túnel → SqueezeOn.
+    - **Canales de Keltner (KC Mult = 1.5)**  
+      Es como un túnel más estrecho que rodea el precio y usa la volatilidad real.  
+      Cuando las Bandas de Bollinger entran completamente dentro de este túnel → se activa la señal de **SqueezeOn** (compresión fuerte).
     
-    - **ATR Period = 20**
-      Mide cuánto se mueve normalmente el precio cada día (la volatilidad real).
+    - **ATR Period = 20**  
+      Mide cuánto se mueve normalmente el precio cada día (es la volatilidad real del activo).  
+      Ayuda al modelo a entender si el precio está más tranquilo o más nervioso de lo habitual.
     
-    - **Trend Threshold = 0.15**
-      Nivel mínimo de fuerza de dirección que necesitamos para decir “este Squeeze tiene una tendencia clara”.
+    - **Trend Threshold = 0.15**  
+      Es el nivel mínimo de “fuerza de dirección” que necesitamos.  
+      Si el Trend supera este número, decimos “este Squeeze tiene una tendencia clara” y puede saltar con fuerza. Si está por debajo, lo consideramos neutral.
     """)
 
 # ===================== API KEY =====================
