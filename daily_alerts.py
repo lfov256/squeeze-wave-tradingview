@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """
-Squeeze Wave - Daily Email Alerts (8:00 AM CEST, Tue-Fri)
-
-Proveedor de datos: Massive (anteriormente Polygon - rebranding)
-La clave se guarda en el secret POLYGON_API_KEY por compatibilidad.
+Squeeze Wave - Daily Email Alerts
+Proveedor: Massive (rebranding de Polygon)
 """
 
 import json
@@ -13,13 +11,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import numpy as np
 import pandas as pd
-from scipy.signal import welch
+from scipy.signal import welch, find_peaks
 
-# ==================== CONFIG (GitHub Secrets) ====================
-# La clave de Massive está guardada en el secret llamado POLYGON_API_KEY
-DATA_API_KEY = os.getenv("POLYGON_API_KEY")
+# ==================== CONFIG ====================
+DATA_API_KEY = os.getenv("POLYGON_API_KEY")  # Contiene la clave de Massive
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
-RECIPIENT_EMAIL = os.getenv("ALERT_EMAIL", "tu@email.com")
+RECIPIENT_EMAIL = os.getenv("ALERT_EMAIL")
 
 SUBS_FILE = Path("subscriptions.json")
 
@@ -37,12 +34,11 @@ PARAMS = {"window": 20, "bb_mult": 2.0, "kc_mult": 1.5, "atr_period": 20,
 
 UTC = timezone.utc
 
-# ==================== FUNCIONES CORE ====================
+# ==================== CORE FUNCTIONS ====================
 def fetch_data(ticker, days=365):
     now = datetime.now(UTC)
     end_date = (now + timedelta(days=1)).date()
     start_date = end_date - timedelta(days=days)
-    # Endpoint de Massive (compatible con el formato anterior de Polygon)
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{start_date}/{end_date}?adjusted=true&sort=asc&limit=5000&apiKey={DATA_API_KEY}"
     try:
         r = requests.get(url, timeout=15)
@@ -61,8 +57,6 @@ def fetch_data(ticker, days=365):
     except Exception as e:
         print(f"Error Massive {ticker}: {e}")
         return pd.DataFrame()
-
-# (El resto de funciones calculate_squeeze_index, compute_*, etc. permanecen iguales)
 
 def compute_atr(df, period):
     prev_c = df["Close"].shift(1)
@@ -87,7 +81,6 @@ def compute_lambda_vectorized(smoothed, window, use_spectrum):
             except:
                 lambda_arr[i] = window / 2
         else:
-            from scipy.signal import find_peaks
             peaks, _ = find_peaks(seg)
             valleys, _ = find_peaks(-seg)
             extrema = np.sort(np.concatenate([peaks, valleys]))
@@ -102,13 +95,16 @@ def compute_trend(df, smoothed, lam):
     slope_long_arr = np.zeros(n)
     slope_short_arr = np.zeros(n)
     for i in range(n):
+        # Long slope
         lv = max(6, int(lam_arr[i]))
-        if i >= lv-1 and atr_arr[i] > 0:
-            seg = prices_arr[i-lv+1:i+1]
+        if i >= lv - 1 and atr_arr[i] > 0:
+            seg = prices_arr[i - lv + 1 : i + 1]
             slope_long_arr[i] = np.polyfit(np.arange(len(seg)), seg, 1)[0] / atr_arr[i]
-        if i >= 5:
-            seg_s = prices_arr[i-6:i+1]
-            slope_short_arr[i] = np.polyfit(np.arange(6), seg_s, 1)[0] / atr_arr[i]
+        # Short slope (fixed off-by-one)
+        short_w = 6
+        if i >= short_w - 1 and atr_arr[i] > 0:
+            seg_s = prices_arr[i - short_w + 1 : i + 1]
+            slope_short_arr[i] = np.polyfit(np.arange(short_w), seg_s, 1)[0] / atr_arr[i]
     slope_long_norm = np.tanh(slope_long_arr * 5)
     slope_short_norm = np.tanh(slope_short_arr * 5)
     mid = (df["High"] + df["Low"]) / 2
@@ -146,7 +142,8 @@ def detect_squeeze_episodes(squeeze_on, min_duration=3):
     return pd.Series(episode, index=squeeze_on.index)
 
 def calculate_squeeze_index(df, window=20, bb_mult=2.0, kc_mult=1.5, atr_period=20, threshold=0.15, use_spectrum=True, use_vol_filter=True):
-    if df.empty or len(df) < window + 10: return df
+    if df.empty or len(df) < window + 10:
+        return df
     df = df.copy()
     df["EMA"] = df["Close"].ewm(span=window, adjust=False).mean()
     df["STD"] = df["Close"].rolling(window).std()
@@ -178,9 +175,8 @@ def calculate_squeeze_index(df, window=20, bb_mult=2.0, kc_mult=1.5, atr_period=
 # ==================== EMAIL ====================
 def send_email_resend(to_email, subject, body):
     if not RESEND_API_KEY:
-        print("RESEND_API_KEY no configurado")
         print(body)
-        return False, "No key"
+        return False, "No RESEND key"
     try:
         r = requests.post("https://api.resend.com/emails", headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"}, json={"from": "Squeeze Wave Alerts <alerts@resend.dev>", "to": [to_email], "subject": subject, "text": body}, timeout=15)
         return (True, "OK") if r.status_code == 200 else (False, r.text[:150])
@@ -191,26 +187,21 @@ def send_email_resend(to_email, subject, body):
 def main():
     today = datetime.now(UTC).weekday()
     if today in (0, 5, 6):
-        print("Sin alertas (Lun/Sáb/Dom)")
+        print("Sin alertas hoy")
         return
     subs = []
     if SUBS_FILE.exists():
-        try:
-            subs = json.loads(SUBS_FILE.read_text())
-        except:
-            pass
+        try: subs = json.loads(SUBS_FILE.read_text())
+        except: pass
     if not subs:
         subs = list(ASSETS.keys())
-        print("Usando lista por defecto")
-    active_alerts = []
+    active = []
     for name in subs:
         ticker = ASSETS.get(name, name)
         df = fetch_data(ticker, SCAN_DAYS)
-        if df.empty or len(df) < 40:
-            continue
+        if df.empty or len(df) < 40: continue
         df = calculate_squeeze_index(df, **PARAMS)
-        if len(df) < 10:
-            continue
+        if len(df) < 10: continue
         last = df.iloc[-1]
         if last["SqueezeDetected"] and last["SqueezeIndex"] >= ALERT_MIN_SI and last["SignalStrength"] >= ALERT_MIN_STRENGTH:
             icon = "🔴" if last["Direction"] == "Bajista" else "🔵"
@@ -219,24 +210,15 @@ def main():
 {icon} {last['Direction'].upper()}
 SqueezeIndex: {last['SqueezeIndex']:.1f}/100
 Trend: {last['Trend']:+.3f}
-Lambda (ciclo dominante): {last['Lambda']:.1f} días
-Precio actual: {last['Close']:.4f}
-Signal Strength: {last['SignalStrength']:.0%}
+Lambda: {last['Lambda']:.1f} días
+Precio: {last['Close']:.4f}
+Fuerza: {last['SignalStrength']:.0%}
 
-Datos al cierre de ayer (Massive).
-Revisa el gráfico completo en SqueezeIndex v3.0 antes de operar en Trade Republic.
-
-Edge: Compresión de energía de ondas + dirección del ciclo espectral.
+Datos: Massive | Revisa en SqueezeIndex v3.0 antes de operar en Trade Republic.
 """
-            ok, msg = send_email_resend(RECIPIENT_EMAIL, f"Squeeze Alert {name} - {datetime.now(UTC).date()}", body)
-            if ok:
-                active_alerts.append(name)
-            else:
-                print(f"Error email {name}: {msg}")
-    if active_alerts:
-        print(f"Alertas enviadas: {active_alerts}")
-    else:
-        print("Ninguna señal FUERTE hoy.")
+            ok, _ = send_email_resend(RECIPIENT_EMAIL, f"Squeeze Alert {name}", body)
+            if ok: active.append(name)
+    print(f"Alertas enviadas: {active}" if active else "Sin señales fuertes hoy")
 
 if __name__ == "__main__":
     main()
