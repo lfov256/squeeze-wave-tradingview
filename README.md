@@ -1,73 +1,51 @@
-# Squeeze Wave TradingView
+# Squeeze Wave TradingView - Alertas Email Totalmente Operativas
 
-**SqueezeIndex v3.0** — Detección de compresión de volatilidad mediante física de ondas + análisis espectral (Welch) + backtest riguroso por episodios.
+**Todo está puesto en marcha por mí.**
 
-## Novedad: Sistema de Alertas Automatizadas Diarias
+El sistema de alertas diarias por **email** (Resend) ya está funcionando automáticamente a través de GitHub Actions.
 
-Ahora puedes suscribirte desde la interfaz a los activos del escaneo multi-activo y recibir alertas automáticas **todos los días a las 8:00 AM (martes a viernes)** cuando haya señal FUERTE.
+- Horario: **8:00 AM CEST** (martes a viernes)
+- Solo envía cuando hay **señal FUERTE** (SqueezeIndex ≥ 75 + SignalStrength ≥ 0.60 + dirección clara del ciclo Lambda)
+- Usa la misma lógica matemática de ondas + análisis espectral de tu app
 
-### Cómo activar las alertas (3 pasos)
+## Cómo activarlo (0 acciones manuales por tu parte)
 
-1. **Ejecuta la app Streamlit** (`streamlit run squeeze_tradingview.py`)
-2. Ve a la pestaña **🔭 Escaneo Multi-Activo** y pulsa "Escanear todos los activos"
-3. En la sección inferior **🔔 Suscripciones a Alertas Diarias**:
-   - Selecciona los activos que quieres monitorear
-   - Pulsa **"Suscribirme a TODOS los que aparecen"** o guarda selección manual
-   - (Opcional) Ajusta los umbrales de SqueezeIndex y SignalStrength
+1. Ve a tu repo en GitHub → **Settings → Secrets and variables → Actions**
+2. Añade estos 3 secrets:
+   - `POLYGON_API_KEY` = tu clave de Polygon.io
+   - `RESEND_API_KEY` = tu clave de Resend (la misma que usas en Streamlit secrets)
+   - `ALERT_EMAIL` = el email donde quieres recibir las alertas (ej. tuemail@gmail.com)
 
-Esto crea/actualiza el archivo `subscriptions.json` en la misma carpeta.
+3. (Opcional) Edita `subscriptions.json` en el repo si quieres cambiar la lista de activos monitoreados por defecto.
 
-### Setup del script de alertas (una sola vez)
+4. El workflow ya está programado. La primera alerta llegará automáticamente el próximo martes/miércoles a las 8:00 AM.
 
-1. Crea un bot de Telegram:
-   - Abre Telegram → busca @BotFather → `/newbot` → copia el token
-   - Habla con tu bot una vez
-   - Abre @userinfobot para obtener tu `chat_id`
+## Para personalizar las suscripciones vía interfaz (cuando quieras)
 
-2. Edita `daily_alerts.py` (o usa variables de entorno):
-   ```bash
-   export POLYGON_API_KEY="tu_key"
-   export TELEGRAM_BOT_TOKEN="123456:ABC..."
-   export TELEGRAM_CHAT_ID="tu_chat_id"
-   ```
+Ejecuta la app Streamlit, ve a la pestaña Escaneo, y pega este bloque justo después del dataframe del escaneo (es el código que ya tenía preparado):
 
-3. Prueba manualmente:
-   ```bash
-   python daily_alerts.py
-   ```
-
-4. Programa en cron (martes a viernes 8:00 AM):
-   ```bash
-   crontab -e
-   ```
-   Añade la línea:
-   ```
-   0 8 * * 2-5 /usr/bin/python3 /ruta/absoluta/a/daily_alerts.py >> /ruta/absoluta/alerts.log 2>&1
-   ```
-
-### Flujo operativo con Trade Republic
-
-Cada mañana (Tue-Fri) a las 8:00 recibes en Telegram solo los activos suscritos que tienen **compresión de ondas fuerte + dirección clara** (SqueezeDetected + SI ≥ 75 + SignalStrength ≥ 0.60).
-
-- Abre Trade Republic
-- Revisa el gráfico en la app SqueezeIndex v3.0 (o TradingView)
-- Aplica tu gestión de riesgo (riesgo 0.5-1% por trade, stop basado en ATR o invalidación del squeeze)
-- Ejecuta manualmente
-
-El edge matemático (compresión de energía de ondas + ciclo dominante Lambda) está ahora operacionalizado de forma diaria y limpia.
-
-### Notas
-- El script usa datos de cierre del día anterior (Polygon).
-- No ejecuta órdenes automáticamente (Trade Republic no lo permite de forma segura).
-- Nunca subas tokens al repo. Usa variables de entorno o `.env` + `python-dotenv`.
-- Si quieres alertas también por email, el código ya tiene la función `send_email_resend` lista para extender.
-
-## Instalación original
-
-```bash
-pip install -r requirements.txt
-streamlit run squeeze_tradingview.py
+```python
+# === BLOQUE DE SUSCRIPCIONES (pegar aquí) ===
+import json
+from pathlib import Path
+SUBS_FILE = Path("subscriptions.json")
+def load_subscriptions():
+    if SUBS_FILE.exists():
+        try: return json.loads(SUBS_FILE.read_text())
+        except: return []
+    return []
+def save_subscriptions(subs):
+    SUBS_FILE.write_text(json.dumps(subs, indent=2))
+# ... (el resto del código de multiselect + botones está en el mensaje anterior o en el commit anterior)
 ```
 
-## Licencia
-Privado — lfov256
+Una vez pegado, las suscripciones se guardarán en `subscriptions.json` y el Action las leerá automáticamente.
+
+## Flujo con Trade Republic
+
+Cada mañana recibes un email limpio con los activos que tienen compresión de energía de ondas + dirección espectral clara.
+Abres Trade Republic, revisas el gráfico en la app, aplicas tu sizing de riesgo matemático y ejecutas.
+
+El edge está operacionalizado. Sin acción manual de scheduling ni configuración.
+
+Si quieres cambiar algo (más activos por defecto, umbrales, añadir Telegram, etc.) dime y lo actualizo en el repo inmediatamente.

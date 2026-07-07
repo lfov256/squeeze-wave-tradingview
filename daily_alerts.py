@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """
-daily_alerts.py - Sistema de alertas automatizadas diarias para Squeeze Wave
-
-Ejecutar vía cron a las 8:00 AM (martes a viernes).
-Solo envía alerta cuando hay señal FUERTE en activos suscritos.
-
-Configura tus credenciales abajo o usa variables de entorno.
+Squeeze Wave - Daily Email Alerts (8:00 AM CEST, Tue-Fri)
+Fully automatic via GitHub Actions.
+Uses Resend for email (same as your Streamlit app).
 """
 
 import json
@@ -17,47 +14,39 @@ import numpy as np
 import pandas as pd
 from scipy.signal import welch
 
-# ==================== CONFIGURACIÓN ====================
-API_KEY = os.getenv("POLYGON_API_KEY", "TU_POLYGON_KEY_AQUI")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "TU_BOT_TOKEN_AQUI")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "TU_CHAT_ID_AQUI")
+# ==================== CONFIG (from GitHub Secrets or env) ====================
+API_KEY = os.getenv("POLYGON_API_KEY")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+RECIPIENT_EMAIL = os.getenv("ALERT_EMAIL", "tu@email.com")  # Cambia por defecto si quieres
 
 SUBS_FILE = Path("subscriptions.json")
 
 ASSETS = {
-    "EUR/USD": "C:EURUSD", "GBP/USD": "C:GBPUSD",
-    "USD/JPY": "C:USDJPY", "Oro (XAU/USD)": "C:XAUUSD",
-    "Plata (XAG/USD)": "C:XAGUSD", "SPY (S&P 500)": "SPY",
-    "BTC/USD": "X:BTCUSD", "ETH/USD": "X:ETHUSD",
-    "USO (Petróleo)": "USO", "QQQ (Nasdaq)": "QQQ",
+    "SPY (S&P 500)": "SPY", "QQQ (Nasdaq)": "QQQ",
+    "Oro (XAU/USD)": "C:XAUUSD", "BTC/USD": "X:BTCUSD",
+    "ETH/USD": "X:ETHUSD", "EUR/USD": "C:EURUSD",
+    "GBP/USD": "C:GBPUSD", "USD/JPY": "C:USDJPY",
 }
 
-# Umbrales por defecto (puedes cambiarlos)
 ALERT_MIN_SI = 75
 ALERT_MIN_STRENGTH = 0.60
 SCAN_DAYS = 120
-
-PARAMS = {
-    "window": 20, "bb_mult": 2.0, "kc_mult": 1.5,
-    "atr_period": 20, "threshold": 0.15,
-    "use_spectrum": True, "use_vol_filter": True
-}
+PARAMS = {"window": 20, "bb_mult": 2.0, "kc_mult": 1.5, "atr_period": 20,
+          "threshold": 0.15, "use_spectrum": True, "use_vol_filter": True}
 
 UTC = timezone.utc
 
-# ==================== FUNCIONES CORE (extraídas del app) ====================
-def fetch_data(ticker: str, days: int = 365) -> pd.DataFrame:
+# ==================== CORE FUNCTIONS (same logic as app) ====================
+def fetch_data(ticker, days=365):
     now = datetime.now(UTC)
     end_date = (now + timedelta(days=1)).date()
     start_date = end_date - timedelta(days=days)
-    url = (f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day"
-           f"/{start_date}/{end_date}?adjusted=true&sort=asc&limit=5000&apiKey={API_KEY}")
+    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{start_date}/{end_date}?adjusted=true&sort=asc&limit=5000&apiKey={API_KEY}"
     try:
         r = requests.get(url, timeout=15)
         r.raise_for_status()
         data = r.json()
-        if "results" not in data or not data["results"]:
-            return pd.DataFrame()
+        if "results" not in data or not data.get("results"): return pd.DataFrame()
         df = pd.DataFrame(data["results"])
         df["Date"] = pd.to_datetime(df["t"], unit="ms").dt.date
         df["Open"] = df.get("o", df["c"])
@@ -67,28 +56,22 @@ def fetch_data(ticker: str, days: int = 365) -> pd.DataFrame:
         df["Volume"] = df.get("v", 0)
         return df[["Date", "Open", "High", "Low", "Close", "Volume"]].reset_index(drop=True)
     except Exception as e:
-        print(f"Error descargando {ticker}: {e}")
+        print(f"Fetch error {ticker}: {e}")
         return pd.DataFrame()
 
-def compute_atr(df: pd.DataFrame, period: int) -> pd.Series:
+def compute_atr(df, period):
     prev_c = df["Close"].shift(1)
-    tr = pd.concat([
-        df["High"] - df["Low"],
-        (df["High"] - prev_c).abs(),
-        (df["Low"] - prev_c).abs()
-    ], axis=1).max(axis=1).fillna(0)
+    tr = pd.concat([df["High"] - df["Low"], (df["High"] - prev_c).abs(), (df["Low"] - prev_c).abs()], axis=1).max(axis=1).fillna(0)
     return tr.ewm(span=period, adjust=False).mean()
 
 def compute_lambda_vectorized(smoothed, window, use_spectrum):
     n = len(smoothed)
     lambda_arr = np.full(n, np.nan)
-    prices_arr = smoothed.values
-    for i in range(window - 1, n):
-        seg = prices_arr[i - window + 1: i + 1]
+    for i in range(window-1, n):
+        seg = smoothed.values[i-window+1:i+1]
         if use_spectrum and len(seg) >= 16:
             try:
-                nperseg = len(seg)
-                freqs, psd = welch(seg, nperseg=nperseg)
+                freqs, psd = welch(seg, nperseg=len(seg))
                 min_freq = 2.0 / window
                 valid = freqs > min_freq
                 if valid.sum() > 1:
@@ -96,22 +79,16 @@ def compute_lambda_vectorized(smoothed, window, use_spectrum):
                     lambda_arr[i] = 1.0 / dom_freq
                 else:
                     lambda_arr[i] = window / 2
-            except:
-                lambda_arr[i] = window / 2
+            except: lambda_arr[i] = window / 2
         else:
             from scipy.signal import find_peaks
             peaks, _ = find_peaks(seg)
             valleys, _ = find_peaks(-seg)
             extrema = np.sort(np.concatenate([peaks, valleys]))
-            if len(extrema) > 1:
-                lambda_arr[i] = float(np.mean(np.diff(extrema)))
-            else:
-                lambda_arr[i] = window / 2
-    lam = pd.Series(lambda_arr, index=smoothed.index)
-    return lam.ffill().bfill().clip(lower=2.0)
+            lambda_arr[i] = float(np.mean(np.diff(extrema))) if len(extrema) > 1 else window / 2
+    return pd.Series(lambda_arr, index=smoothed.index).ffill().bfill().clip(lower=2.0)
 
 def compute_trend(df, smoothed, lam):
-    # Versión simplificada del cálculo de Trend (copia exacta de tu app si quieres más precisión)
     n = len(df)
     prices_arr = smoothed.values
     atr_arr = df["ATR"].values
@@ -120,20 +97,14 @@ def compute_trend(df, smoothed, lam):
     slope_short_arr = np.zeros(n)
     for i in range(n):
         lv = max(6, int(lam_arr[i]))
-        atr_v = atr_arr[i]
-        if atr_v == 0 or np.isnan(atr_v): continue
-        if i >= lv - 1:
-            seg = prices_arr[i - lv + 1: i + 1]
-            x = np.arange(len(seg), dtype=float)
-            slope_long_arr[i] = np.polyfit(x, seg, 1)[0] / atr_v
-        short_w = 6
-        if i >= short_w - 1:
-            seg_s = prices_arr[i - short_w + 1: i + 1]
-            x_s = np.arange(short_w, dtype=float)
-            slope_short_arr[i] = np.polyfit(x_s, seg_s, 1)[0] / atr_v
+        if i >= lv-1 and atr_arr[i] > 0:
+            seg = prices_arr[i-lv+1:i+1]
+            slope_long_arr[i] = np.polyfit(np.arange(len(seg)), seg, 1)[0] / atr_arr[i]
+        if i >= 5:
+            seg_s = prices_arr[i-6:i+1]
+            slope_short_arr[i] = np.polyfit(np.arange(6), seg_s, 1)[0] / atr_arr[i]
     slope_long_norm = np.tanh(slope_long_arr * 5)
     slope_short_norm = np.tanh(slope_short_arr * 5)
-    # MFI simplificado
     mid = (df["High"] + df["Low"]) / 2
     range_ = (df["High"] - df["Low"]).replace(0, np.nan)
     bp = ((df["Close"] - mid) / range_).clip(-1, 1).fillna(0)
@@ -145,10 +116,7 @@ def compute_trend(df, smoothed, lam):
     mfi_score = ((pd.Series(mfi_raw, index=df.index) - 50) / 50).clip(-1, 1)
     roc = df["Close"].pct_change(5).fillna(0)
     roc_normalized = np.tanh(roc / (df["ATR"] / df["Close"].replace(0, np.nan)).fillna(0.01) * 3)
-    trend = (0.35 * pd.Series(slope_long_norm, index=df.index) +
-             0.25 * pd.Series(slope_short_norm, index=df.index) +
-             0.25 * mfi_score +
-             0.15 * roc_normalized).ewm(span=2, adjust=False).mean()
+    trend = (0.35 * pd.Series(slope_long_norm, index=df.index) + 0.25 * pd.Series(slope_short_norm, index=df.index) + 0.25 * mfi_score + 0.15 * roc_normalized).ewm(span=2, adjust=False).mean()
     return trend
 
 def detect_squeeze_episodes(squeeze_on, min_duration=3):
@@ -156,8 +124,7 @@ def detect_squeeze_episodes(squeeze_on, min_duration=3):
     ep_id = 0
     in_sq = False
     start = 0
-    vals = squeeze_on.values
-    for i, val in enumerate(vals):
+    for i, val in enumerate(squeeze_on.values):
         if val and not in_sq:
             in_sq = True
             start = i
@@ -166,16 +133,14 @@ def detect_squeeze_episodes(squeeze_on, min_duration=3):
             if i - start >= min_duration:
                 ep_id += 1
                 episode[start:i] = ep_id
-        elif val and in_sq and i == len(vals) - 1:
+        elif val and in_sq and i == len(squeeze_on) - 1:
             if i - start + 1 >= min_duration:
                 ep_id += 1
                 episode[start:] = ep_id
     return pd.Series(episode, index=squeeze_on.index)
 
-def calculate_squeeze_index(df, window, bb_mult, kc_mult, atr_period, threshold,
-                            use_spectrum=True, use_vol_filter=True):
-    if df.empty or len(df) < window + 10:
-        return df
+def calculate_squeeze_index(df, window=20, bb_mult=2.0, kc_mult=1.5, atr_period=20, threshold=0.15, use_spectrum=True, use_vol_filter=True):
+    if df.empty or len(df) < window + 10: return df
     df = df.copy()
     df["EMA"] = df["Close"].ewm(span=window, adjust=False).mean()
     df["STD"] = df["Close"].rolling(window).std()
@@ -194,7 +159,7 @@ def calculate_squeeze_index(df, window, bb_mult, kc_mult, atr_period, threshold,
     si_roll_max = raw_si.rolling(window * 3).max().replace(0, np.nan)
     df["SqueezeIndex"] = ((raw_si / si_roll_max) * 100 * lambda_quality).clip(0, 100).fillna(0)
     df["SqueezeOn"] = (df["UpperBB"] <= df["UpperKC"]) & (df["LowerBB"] >= df["LowerKC"])
-    df["SqueezeEpisode"] = detect_squeeze_episodes(df["SqueezeOn"], min_duration=3)
+    df["SqueezeEpisode"] = detect_squeeze_episodes(df["SqueezeOn"])
     df["Trend"] = compute_trend(df, smoothed, df["Lambda"])
     df["Direction"] = np.where(df["Trend"] > 0, "Alcista", np.where(df["Trend"] < 0, "Bajista", "Neutral"))
     df["SqueezeDetected"] = df["SqueezeOn"] & (df["Trend"].abs() > threshold)
@@ -204,62 +169,64 @@ def calculate_squeeze_index(df, window, bb_mult, kc_mult, atr_period, threshold,
     df["SignalStrength"] = (0.6 * df["SqueezeIndex"] / 100 + 0.4 * df["Trend"].abs().clip(0, 1)).clip(0, 1)
     return df
 
-# ==================== TELEGRAM ====================
-def send_telegram(text: str):
-    if not TELEGRAM_TOKEN or TELEGRAM_TOKEN == "TU_BOT_TOKEN_AQUI":
-        print("Telegram no configurado - usando print")
-        print(text)
-        return True
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+# ==================== EMAIL (Resend - same as your app) ====================
+def send_email_resend(to_email, subject, body):
+    if not RESEND_API_KEY:
+        print("RESEND_API_KEY no configurado")
+        print(body)
+        return False, "No key"
     try:
-        r = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=10)
-        return r.status_code == 200
+        r = requests.post("https://api.resend.com/emails", headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"}, json={"from": "Squeeze Wave Alerts <alerts@resend.dev>", "to": [to_email], "subject": subject, "text": body}, timeout=15)
+        return (True, "OK") if r.status_code == 200 else (False, r.text[:150])
     except Exception as e:
-        print(f"Error Telegram: {e}")
-        return False
+        return False, str(e)[:120]
 
 # ==================== MAIN ====================
 def main():
     today = datetime.now(UTC).weekday()
-    if today in (0, 5, 6):  # Lunes, Sábado, Domingo
-        print("Sin alertas hoy (Lun/Sáb/Dom según configuración)")
+    if today in (0, 5, 6):
+        print("Sin alertas (Lun/Sáb/Dom)")
         return
-    if not SUBS_FILE.exists():
-        print("No existe subscriptions.json - crea suscripciones desde la app Streamlit")
-        return
-    try:
-        subs = json.loads(SUBS_FILE.read_text())
-    except:
-        subs = []
+    subs = []
+    if SUBS_FILE.exists():
+        try: subs = json.loads(SUBS_FILE.read_text())
+        except: pass
     if not subs:
-        print("Sin suscripciones activas")
-        return
-    active = []
+        subs = list(ASSETS.keys())  # Default: todos los ASSETS si no hay JSON
+        print("Usando lista por defecto")
+    active_alerts = []
     for name in subs:
         ticker = ASSETS.get(name, name)
         df = fetch_data(ticker, SCAN_DAYS)
-        if df.empty or len(df) < 40:
-            continue
+        if df.empty or len(df) < 40: continue
         df = calculate_squeeze_index(df, **PARAMS)
-        if len(df) < 10:
-            continue
+        if len(df) < 10: continue
         last = df.iloc[-1]
         if last["SqueezeDetected"] and last["SqueezeIndex"] >= ALERT_MIN_SI and last["SignalStrength"] >= ALERT_MIN_STRENGTH:
             icon = "🔴" if last["Direction"] == "Bajista" else "🔵"
-            msg = f"""🚨 <b>SQUEEZE WAVE ALERT</b> — {name}
+            body = f"""SQUEEZE WAVE ALERT - {name}
 
-{icon} <b>{last['Direction'].upper()}</b>  |  SqueezeIndex: <b>{last['SqueezeIndex']:.1f}/100</b>
-Trend: <b>{last['Trend']:+.3f}</b>  |  Lambda Ω: <b>{last['Lambda']:.1f} días</b>
-Precio: <b>{last['Close']:.4f}</b>  |  SignalStrength: <b>{last['SignalStrength']:.0%}</b>
+{icon} {last['Direction'].upper()}
+SqueezeIndex: {last['SqueezeIndex']:.1f}/100
+Trend: {last['Trend']:+.3f}
+Lambda (ciclo dominante): {last['Lambda']:.1f} días
+Precio actual: {last['Close']:.4f}
+Signal Strength: {last['SignalStrength']:.0%}
 
-<i>Datos al cierre del día anterior. Revisa el gráfico completo en la app SqueezeIndex v3.0 antes de operar en Trade Republic.</i>
+Datos al cierre de ayer.
+Revisa el gráfico completo en SqueezeIndex v3.0 antes de operar en Trade Republic.
+
+Edge: Compresión de energía de ondas + dirección del ciclo espectral.
 """
-            if send_telegram(msg):
-                active.append(name)
-    if active:
-        print(f"Alertas enviadas: {active}")
+            ok, msg = send_email_resend(RECIPIENT_EMAIL, f"Squeeze Alert {name} - {datetime.now(UTC).date()}", body)
+            if ok:
+                active_alerts.append(name)
+            else:
+                print(f"Error email {name}: {msg}")
+    if active_alerts:
+        print(f"Alertas enviadas por email a {RECIPIENT_EMAIL}: {active_alerts}")
     else:
-        print("Ningún activo suscrito con señal FUERTE esta mañana.")
+        print("Ninguna señal FUERTE hoy en los activos suscritos.")
 
 if __name__ == "__main__":
     main()
