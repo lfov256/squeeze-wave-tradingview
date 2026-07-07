@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Squeeze Wave Daily Alerts - Corregido
+Squeeze Wave - Final Hotfix
 """
 
 import json
@@ -19,12 +19,9 @@ RECIPIENT_EMAIL = os.getenv("ALERT_EMAIL")
 SUBS_FILE = Path("subscriptions.json")
 
 ASSETS = {
-    "SPY (S&P 500)": "SPY",
-    "QQQ (Nasdaq)": "QQQ",
-    "Oro (XAU/USD)": "C:XAUUSD",
-    "BTC/USD": "X:BTCUSD",
-    "ETH/USD": "X:ETHUSD",
-    "EUR/USD": "C:EURUSD",
+    "SPY (S&P 500)": "SPY", "QQQ (Nasdaq)": "QQQ",
+    "Oro (XAU/USD)": "C:XAUUSD", "BTC/USD": "X:BTCUSD",
+    "ETH/USD": "X:ETHUSD", "EUR/USD": "C:EURUSD",
 }
 
 ALERT_MIN_SI = 75
@@ -88,7 +85,7 @@ def compute_lambda_vectorized(smoothed, window, use_spectrum):
 def compute_trend(df, smoothed, lam):
     n = len(df)
     prices_arr = smoothed.values
-    atr_arr = df.get("ATR", pd.Series([0]*n)).values
+    atr_arr = df.get("ATR", pd.Series([0.0] * n)).values
     lam_arr = lam.values
     slope_long_arr = np.zeros(n)
     slope_short_arr = np.zeros(n)
@@ -98,13 +95,19 @@ def compute_trend(df, smoothed, lam):
         if i >= lv - 1 and atr_arr[i] > 0:
             seg = prices_arr[i - lv + 1 : i + 1]
             if len(seg) >= 2:
-                slope_long_arr[i] = np.polyfit(np.arange(len(seg)), seg, 1)[0] / atr_arr[i]
-        # Short slope - FIXED
+                try:
+                    slope_long_arr[i] = np.polyfit(np.arange(len(seg)), seg, 1)[0] / atr_arr[i]
+                except:
+                    pass
+        # Short slope - COMPLETELY SAFE
         short_w = 6
         if i >= short_w - 1 and atr_arr[i] > 0:
             seg_s = prices_arr[i - short_w + 1 : i + 1]
             if len(seg_s) == short_w:
-                slope_short_arr[i] = np.polyfit(np.arange(short_w), seg_s, 1)[0] / atr_arr[i]
+                try:
+                    slope_short_arr[i] = np.polyfit(np.arange(short_w), seg_s, 1)[0] / atr_arr[i]
+                except:
+                    pass
     slope_long_norm = np.tanh(slope_long_arr * 5)
     slope_short_norm = np.tanh(slope_short_arr * 5)
     mid = (df["High"] + df["Low"]) / 2
@@ -118,10 +121,7 @@ def compute_trend(df, smoothed, lam):
     mfi_score = ((pd.Series(mfi_raw, index=df.index) - 50) / 50).clip(-1, 1)
     roc = df["Close"].pct_change(5).fillna(0)
     roc_normalized = np.tanh(roc / (df["ATR"] / df["Close"].replace(0, np.nan)).fillna(0.01) * 3)
-    trend = (0.35 * pd.Series(slope_long_norm, index=df.index) +
-             0.25 * pd.Series(slope_short_norm, index=df.index) +
-             0.25 * mfi_score +
-             0.15 * roc_normalized).ewm(span=2, adjust=False).mean()
+    trend = (0.35 * pd.Series(slope_long_norm, index=df.index) + 0.25 * pd.Series(slope_short_norm, index=df.index) + 0.25 * mfi_score + 0.15 * roc_normalized).ewm(span=2, adjust=False).mean()
     return trend
 
 def detect_squeeze_episodes(squeeze_on, min_duration=3):
@@ -187,7 +187,7 @@ def send_email_resend(to_email, subject, body):
 def main():
     today = datetime.now(UTC).weekday()
     if today in (0, 5, 6):
-        print("Sin alertas (Lun/Sáb/Dom)")
+        print("Sin alertas hoy")
         return
     subs = []
     if SUBS_FILE.exists():
@@ -207,7 +207,7 @@ def main():
             body = f"SQUEEZE ALERT - {name}\n{icon} {last['Direction']}\nSI: {last['SqueezeIndex']:.1f} | Trend: {last['Trend']:+.3f} | Lambda: {last['Lambda']:.1f}d | Precio: {last['Close']:.4f}"
             send_email_resend(RECIPIENT_EMAIL, f"Squeeze {name}", body)
             active.append(name)
-    print("Enviadas:" , active if active else "Ninguna")
+    print("Enviadas:", active if active else "Ninguna")
 
 if __name__ == "__main__":
     main()
