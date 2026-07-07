@@ -2,36 +2,22 @@ name: Daily Squeeze Wave Email Alerts
 
 on:
   schedule:
-    - cron: '0 6 * * 2-5'   # 8:00 AM CEST (6:00 UTC) Tuesday-Friday
-  workflow_dispatch:   # Manual trigger for testing
+    - cron: '0 6 * * 2-5'   # 8:00 AM CEST martes-viernes
+  workflow_dispatch:
 
 jobs:
   send-alerts:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install requests pandas numpy scipy
-
-      - name: Run daily alerts (email via Resend)
+        run: pip install requests pandas numpy scipy
+      - name: Run daily alerts
         env:
-          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}   # Contiene la clave de Massive
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
         run: python daily_alerts.py
-
-      - name: Upload logs (optional)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: alert-logs
-          path: alerts.log
