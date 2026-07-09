@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Squeeze Wave - Final Hotfix
+Squeeze Wave Daily Alerts
+Alert condition changed to: ANY of the 3 conditions
 """
 
 import json
@@ -90,7 +91,6 @@ def compute_trend(df, smoothed, lam):
     slope_long_arr = np.zeros(n)
     slope_short_arr = np.zeros(n)
     for i in range(n):
-        # Long slope
         lv = max(6, int(lam_arr[i]))
         if i >= lv - 1 and atr_arr[i] > 0:
             seg = prices_arr[i - lv + 1 : i + 1]
@@ -99,7 +99,6 @@ def compute_trend(df, smoothed, lam):
                     slope_long_arr[i] = np.polyfit(np.arange(len(seg)), seg, 1)[0] / atr_arr[i]
                 except:
                     pass
-        # Short slope - COMPLETELY SAFE
         short_w = 6
         if i >= short_w - 1 and atr_arr[i] > 0:
             seg_s = prices_arr[i - short_w + 1 : i + 1]
@@ -202,10 +201,14 @@ def main():
         df = calculate_squeeze_index(df, **PARAMS)
         if len(df) < 10: continue
         last = df.iloc[-1]
-        if last.get("SqueezeDetected") and last.get("SqueezeIndex", 0) >= ALERT_MIN_SI and last.get("SignalStrength", 0) >= ALERT_MIN_STRENGTH:
+        # NEW CONDITION: ANY of the 3 conditions
+        si = last.get("SqueezeIndex", 0)
+        strength = last.get("SignalStrength", 0)
+        detected = last.get("SqueezeDetected", False)
+        if detected or si >= ALERT_MIN_SI or strength >= ALERT_MIN_STRENGTH:
             icon = "🔴" if last["Direction"] == "Bajista" else "🔵"
-            body = f"SQUEEZE ALERT - {name}\n{icon} {last['Direction']}\nSI: {last['SqueezeIndex']:.1f} | Trend: {last['Trend']:+.3f} | Lambda: {last['Lambda']:.1f}d | Precio: {last['Close']:.4f}"
-            send_email_resend(RECIPIENT_EMAIL, f"Squeeze {name}", body)
+            body = f"SQUEEZE ALERT - {name}\n{icon} {last['Direction']}\nSqueezeDetected: {detected}\nSqueezeIndex: {si:.1f} (umbral {ALERT_MIN_SI})\nSignalStrength: {strength:.0%} (umbral {ALERT_MIN_STRENGTH})\nLambda: {last['Lambda']:.1f}d | Precio: {last['Close']:.4f}"
+            send_email_resend(RECIPIENT_EMAIL, f"Squeeze Alert {name}", body)
             active.append(name)
     print("Enviadas:", active if active else "Ninguna")
 
