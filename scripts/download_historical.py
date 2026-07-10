@@ -2,6 +2,13 @@
 """
 Script robusto para descargar máximo histórico de Massive/Polygon
 en formato Parquet con soporte incremental y reintentos.
+
+Actualizado para cubrir el universo completo de activos del sistema Squeeze-Wave:
+SPY, QQQ, Oro (XAU), Plata (XAG), BTC, ETH, EUR/USD, GBP/USD, USD/JPY, USO (Petróleo).
+
+Esto permite backtesting uniforme del modelo de compresión de ondas
+(SqueezeIndex + análisis espectral) y captura de periodos de volatilidad
+que se comprime de forma continua antes de movimientos abruptos.
 """
 
 import os
@@ -18,9 +25,13 @@ ASSETS = {
     "SPY": "SPY",
     "QQQ": "QQQ",
     "XAUUSD": "C:XAUUSD",
+    "XAGUSD": "C:XAGUSD",      # Plata
     "BTCUSD": "X:BTCUSD",
     "ETHUSD": "X:ETHUSD",
     "EURUSD": "C:EURUSD",
+    "GBPUSD": "C:GBPUSD",      # Libra Dólar
+    "USDJPY": "C:USDJPY",      # Yen Dólar
+    "USO": "USO",              # Petróleo (proxy WTI)
 }
 
 API_KEY = os.getenv("POLYGON_API_KEY")
@@ -48,7 +59,7 @@ def fetch_with_retry(url, max_retries=5):
 def download_ticker(ticker: str, name: str):
     filepath = DATA_DIR / f"{name}.parquet"
 
-    # Si ya existe, descargar solo datos nuevos
+    # Si ya existe, descargar solo datos nuevos (incremental)
     if filepath.exists():
         existing_df = pd.read_parquet(filepath)
         last_date = existing_df["Date"].max()
@@ -98,7 +109,7 @@ def main():
 
     for name, ticker in ASSETS.items():
         download_ticker(ticker, name)
-        time.sleep(2)  # Pequeña pausa entre tickers
+        time.sleep(2)  # Pequeña pausa entre tickers para respetar rate limits
 
 if __name__ == "__main__":
     main()
