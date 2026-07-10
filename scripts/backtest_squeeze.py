@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 """
-Backtesting Avanzado de Squeeze Wave sobre datos históricos
-
-Características:
-- Múltiples períodos de retorno (1d, 3d, 5d, 10d, 20d)
-- Análisis por nivel de SqueezeIndex
-- Separación: SqueezeDetected vs solo SqueezeIndex alto
-- Export a CSV
-- Estadísticas detalladas
+Backtesting Real de Squeeze Wave usando la lógica exacta de daily_alerts.py
 """
 
 import os
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from datetime import timedelta
+
+# Importar funciones del script principal
+try:
+    from daily_alerts import calculate_squeeze_index, PARAMS, ALERT_MIN_SI, ALERT_MIN_STRENGTH
+except ImportError:
+    print("Error: No se pudo importar desde daily_alerts.py")
+    exit(1)
 
 DATA_DIR = Path("data/historical")
 RESULTS_DIR = Path("data")
@@ -42,95 +41,111 @@ def load_all_data():
             all_data[name] = df
             print(f"Cargado {name}: {len(df)} filas")
         else:
-            print(f"No se encontró {name}.parquet")
+            print(f"No se encontró archivo para {name}")
     return all_data
 
 
-def calculate_forward_returns(df, periods):
-    for p in periods:
-        df[f"return_{p}d"] = df["Close"].pct_change(p).shift(-p) * 100
+def calculate_forward_returns(df):
+    for p in FORWARD_PERIODS:
+        df[f"fwd_return_{p}d"] = df["Close"].pct_change(p).shift(-p) * 100
     return df
 
 
-def run_backtest_on_ticker(name, df):
-    print(f"\n=== Backtesting {name} ===")
-    df = df.copy()
-    df = calculate_forward_returns(df, FORWARD_PERIODS)
-
-    # Aquí iría la lógica completa de calculate_squeeze_index + detección de señales
-    # Por ahora usamos una versión simplificada para demostración
+def detect_signals(df):
+    """Detecta señales usando la misma lógica que daily_alerts.py (ANY de las 3 condiciones)"""
     signals = []
-    for i in range(20, len(df) - 20):
-        # Simulación simple de señal (reemplazar con lógica real)
-        if df.loc[i, "Close"] < df.loc[i-20:i, "Close"].mean() * 0.98:  # Ejemplo simplificado
+    for i in range(len(df)):
+        row = df.iloc[i]
+        si = row.get("SqueezeIndex", 0)
+        strength = row.get("SignalStrength", 0)
+        detected = row.get("SqueezeDetected", False)
+
+        if detected or si >= ALERT_MIN_SI or strength >= ALERT_MIN_STRENGTH:
             signal = {
-                "date": df.loc[i, "Date"],
-                "price": df.loc[i, "Close"],
-                "squeeze_index": np.random.uniform(60, 98),  # Placeholder
-                "squeeze_detected": np.random.choice([True, False], p=[0.3, 0.7]),
-                "direction": np.random.choice(["Alcista", "Bajista"])
+                "date": row["Date"],
+                "ticker": row.get("ticker", ""),
+                "price": row["Close"],
+                "squeeze_index": si,
+                "signal_strength": strength,
+                "squeeze_detected": detected,
+                "direction": row.get("Direction", ""),
+                "trend": row.get("Trend", 0)
             }
             # Añadir retornos forward
             for p in FORWARD_PERIODS:
-                signal[f"return_{p}d"] = df.loc[i, f"return_{p}d"]
+                col = f"fwd_return_{p}d"
+                if col in df.columns:
+                    signal[col] = row[col]
             signals.append(signal)
-
     return pd.DataFrame(signals)
 
 
-def analyze_signals(signals_df):
+def analyze_by_level(signals_df):
     if signals_df.empty:
-        return None
+        return pd.DataFrame()
+
+    levels = [
+        (0, 60, "Bajo"),
+        (60, 75, "Medio"),
+        (75, 90, "Alto"),
+        (90, 200, "Extremo")
+    ]
 
     results = []
-    for period in FORWARD_PERIODS:
-        col = f"return_{period}d"
-        valid = signals_df[col].dropna()
-        if len(valid) == 0:
+    for low, high, label in levels:
+        mask = (signals_df["squeeze_index"] >= low) & (signals_df["squeeze_index"] < high)
+        level_signals = signals_df[mask]
+        if level_signals.empty:
             continue
 
-        expectancy = valid.mean()
-        win_rate = (valid > 0).mean() * 100
-        avg_move = valid.abs().mean()
-
-        results.append({
-            "Periodo": f"{period}d",
-            "Expectancy %": round(expectancy, 2),
-            "Win Rate %": round(win_rate, 1),
-            "Mov. Medio %": round(avg_move, 2),
-            "Nº Señales": len(valid)
-        })
+        row_data = {"Nivel": label, "Señales": len(level_signals)}
+        for p in FORWARD_PERIODS:
+            col = f"fwd_return_{p}d"
+            if col in level_signals.columns:
+                valid = level_signals[col].dropna()
+                if len(valid) > 0:
+                    row_data[f"Exp_{p}d %"] = round(valid.mean(), 2)
+                    row_data[f"Win_{p}d %"] = round((valid > 0).mean() * 100, 1)
+        results.append(row_data)
 
     return pd.DataFrame(results)
 
 
 def main():
-    print("Iniciando Backtesting Avanzado...\n")
+    print("=== BACKTESTING REAL CON LÓGICA DE PRODUCCIÓN ===\n")
     all_data = load_all_data()
 
-    all_signals = []
+    all_signals_list = []
 
     for name, df in all_data.items():
-        signals = run_backtest_on_ticker(name, df)
+        print(f"\nProcesando {name}...")
+        df = calculate_forward_returns(df)
+
+        # Ejecutar cálculo real de SqueezeIndex
+        df = calculate_squeeze_index(df, **PARAMS)
+
+        # Detectar señales con la lógica real
+        signals = detect_signals(df)
         if not signals.empty:
             signals["ticker"] = name
-            all_signals.append(signals)
+            all_signals_list.append(signals)
+            print(f"  Señales detectadas: {len(signals)}")
 
-    if not all_signals:
-        print("No se detectaron señales.")
+    if not all_signals_list:
+        print("\nNo se detectaron señales en el histórico.")
         return
 
-    final_signals = pd.concat(all_signals, ignore_index=True)
+    final_signals = pd.concat(all_signals_list, ignore_index=True)
 
-    print("\n=== RESUMEN GENERAL ===")
-    summary = analyze_signals(final_signals)
+    print("\n=== RESUMEN POR NIVEL DE SQUEEZEINDEX ===")
+    summary = analyze_by_level(final_signals)
     print(summary.to_string(index=False))
 
-    # Guardar resultados
-    output_path = RESULTS_DIR / "backtest_results.csv"
-    final_signals.to_csv(output_path, index=False)
-    print(f"\nResultados guardados en: {output_path}")
-    print(f"Total señales detectadas: {len(final_signals)}")
+    # Guardar resultados detallados
+    output_file = RESULTS_DIR / "backtest_results.csv"
+    final_signals.to_csv(output_file, index=False)
+    print(f"\nResultados detallados guardados en: {output_file}")
+    print(f"Total señales históricas detectadas: {len(final_signals)}")
 
 if __name__ == "__main__":
     main()
