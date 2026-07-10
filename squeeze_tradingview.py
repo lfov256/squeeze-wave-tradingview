@@ -1,7 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║   SQUEEZE INDEX v3.0 — Rediseño Completo                                    ║
-║   KPIs claros · Backtest riguroso · Visuales de calidad profesional         ║
+║   SQUEEZE INDEX v3.0 — Rediseño Completo                                    ║    ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 import streamlit as st
@@ -13,6 +12,12 @@ from datetime import datetime, timedelta, timezone
 import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from backtest_squeeze import (
+    detect_signals,
+    analyze_by_level,
+    calculate_forward_returns,
+    FORWARD_PERIODS
+)
 
 UTC = timezone.utc
 
@@ -1076,153 +1081,61 @@ with tab_dash:
 # TAB: BACKTEST
 # ─────────────────────────────────────────────────────────────────────────────
 with tab_backtest:
-    st.markdown("## 🎯 Backtest Real por Episodios")
-
+    st.markdown("## Backtest — Señales Diarias (Lógica de Producción)")
+    
     st.markdown("""
     <div class="explain-box">
-    <b>¿Cómo funciona este backtest?</b><br>
-    Cuando un episodio de squeeze termina (≥3 días de compresión consecutiva), se registra la dirección
-    que predecía el modelo en ese momento y se mide el retorno real del precio en los N días siguientes.
-    La "señal" entra al precio de cierre del último día del episodio y sale N días después.
-    <br><br>
-    <b>Retorno alineado</b> = si la señal era alcista, se toma el retorno largo. Si era bajista, se simula un corto.
-    Así medimos si el modelo aportó información útil, no solo si el mercado subió.
+    Este backtest usa <b>exactamente la misma lógica</b> que las alertas automáticas diarias.<br>
+    Detecta señales cada día que cumple las condiciones de compresión de ondas y mide los retornos reales 
+    en los días siguientes (1, 3, 5, 10 y 20 días).<br>
+    Los resultados se agrupan por nivel de <b>SqueezeIndex</b> para ver si a mayor compresión hay mejor expectancy.
     </div>
     """, unsafe_allow_html=True)
 
-    fwd_days = st.slider(
-        "Ventana de medición post-squeeze (días)",
-        min_value=2, max_value=20, value=5,
-        help="Cuántos días después del squeeze se mide el retorno. 5 días = 1 semana de trading."
-    )
+    if "df" in dir() and not df.empty:
+        with st.spinner("Calculando backtest con lógica de producción..."):
+            # 1. Añadir retornos forward
+            df_bt = calculate_forward_returns(df.copy())
+            
+            # 2. Asegurar que tiene SqueezeIndex calculado
+            if "SqueezeIndex" not in df_bt.columns:
+                df_bt = calculate_squeeze_index(df_bt, **PARAMS)
+            
+            # 3. Detectar señales (misma función que daily_alerts)
+            signals_df = detect_signals(df_bt)
+            
+            if signals_df.empty:
+                st.warning("No se detectaron señales en este activo con los parámetros actuales.")
+            else:
+                # === RESUMEN POR NIVEL DE COMPRESIÓN ===
+                st.markdown("### Resumen por nivel de SqueezeIndex")
+                summary = analyze_by_level(signals_df)
+                st.dataframe(summary, use_container_width=True)
+                
+                # === SEÑALES DETALLADAS ===
+                with st.expander(f"Ver todas las señales detectadas ({len(signals_df)})", expanded=False):
+                    st.dataframe(signals_df.sort_values("date", ascending=False), use_container_width=True)
+                
+                # Guardar resultados (igual que el script standalone)
+                output_path = Path("data/backtest_squeeze_produccion.csv")
+                signals_df.to_csv(output_path, index=False)
+                st.success(f"Resultados guardados en: {output_path}")
+                
+                # Métricas rápidas
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total señales", len(signals_df))
+                with col2:
+                    if "fwd_return_5d" in signals_df.columns:
+                        exp_5d = signals_df["fwd_return_5d"].mean()
+                        st.metric("Expectancy 5 días", f"{exp_5d:+.2f}%")
+                with col3:
+                    if "fwd_return_5d" in signals_df.columns:
+                        win_5d = (signals_df["fwd_return_5d"] > 0).mean() * 100
+                        st.metric("Win Rate 5 días", f"{win_5d:.1f}%")
 
-    if update and "df" in dir() and not df.empty and "SqueezeEpisode" in df.columns:
-        with st.spinner("Calculando backtest…"):
-            bt, metrics = run_backtest(df, forward_days=fwd_days)
-
-        if bt.empty:
-            st.warning("No hay episodios suficientes. Prueba con más días de histórico o parámetros menos restrictivos.")
-        else:
-            # ── Métricas principales del backtest ────────────────────────────
-            st.markdown('<div class="section-header">MÉTRICAS DE RENDIMIENTO</div>', unsafe_allow_html=True)
-
-            wr = metrics["win_rate"]
-            wr_color = "green" if wr > 55 else "yellow" if wr > 45 else "red"
-            pf = metrics["profit_factor"]
-            pf_color = "green" if (pf and pf > 1.5) else "yellow" if (pf and pf > 1.0) else "red"
-            exp_color = "green" if metrics["expectancy"] > 0 else "red"
-            sharpe_color = "green" if metrics["sharpe"] > 1 else "yellow" if metrics["sharpe"] > 0 else "red"
-
-            render_kpis([
-                ("Win Rate", f"{wr:.1f}%",
-                 f"{int(wr/100*metrics['total'])}/{metrics['total']} aciertos", wr_color),
-                ("Expectancy / op.", f"{metrics['expectancy']:+.2f}%",
-                 "Ganancia esperada por operación", exp_color),
-                ("Profit Factor", f"{pf:.2f}" if pf and not np.isnan(pf) else "N/A",
-                 "Bruto ganado / bruto perdido", pf_color),
-                ("Sharpe aprox.", f"{metrics['sharpe']:.2f}",
-                 f"Anualizado · ventana {fwd_days}d", sharpe_color),
-                ("Max. Drawdown", f"{metrics['max_dd']:.2f}%",
-                 "Peor racha acumulada", "red"),
-            ])
-
-            st.markdown("")
-
-            # Segunda fila de métricas
-            render_kpis([
-                ("Episodios analizados", f"{metrics['total']}",
-                 "Total de squeezes con señal medible", "blue"),
-                ("Ganancia media ✅", f"{metrics['avg_win']:+.2f}%",
-                 "Promedio de aciertos", "green"),
-                ("Pérdida media ❌", f"{metrics['avg_loss']:+.2f}%",
-                 "Promedio de fallos", "red"),
-                ("Payoff Ratio", f"{metrics['payoff']:.2f}" if not np.isnan(metrics['payoff']) else "N/A",
-                 "Ganancia media / pérdida media", "yellow"),
-                ("Calmar Ratio", f"{metrics['calmar']:.2f}" if not np.isnan(metrics['calmar']) else "N/A",
-                 "Retorno total / max drawdown", "purple"),
-            ])
-
-            st.markdown("")
-
-            # Explicación de métricas
-            with st.expander("🔍 ¿Qué significa cada métrica?", expanded=False):
-                st.markdown("""
-                | Métrica | Qué mide | Bueno si… |
-                |---|---|---|
-                | **Win Rate** | % de episodios en que el precio se movió en la dirección predicha | > 55% |
-                | **Expectancy** | Ganancia media esperada por operación | > 0% |
-                | **Profit Factor** | € ganados totales / € perdidos totales | > 1.5 |
-                | **Sharpe aprox.** | Retorno por unidad de riesgo, anualizado | > 1.0 |
-                | **Max Drawdown** | Peor pérdida acumulada seguida | Lo más cercano a 0 |
-                | **Payoff Ratio** | ¿Ganas más cuando aciertas de lo que pierdes cuando fallas? | > 1.0 |
-                | **Calmar Ratio** | Retorno total dividido por el peor drawdown | > 1.0 |
-
-                **Nota importante**: Estos son retornos brutos sin costes de transacción, slippage ni tamaño de posición.
-                Sirven para evaluar si el *modelo tiene información*, no como proyección de beneficios reales.
-                """)
-
-            # ── Gráfico de backtest ──────────────────────────────────────────
-            st.markdown('<div class="section-header">RETORNOS POR EPISODIO + EQUITY CURVE</div>', unsafe_allow_html=True)
-            fig_bt = build_backtest_chart(bt, metrics, fwd_days)
-            st.plotly_chart(fig_bt, use_container_width=True)
-
-            # Leyenda del gráfico
-            st.markdown("""
-            <div class="explain-box">
-            <b>Panel superior:</b> Retorno alineado de cada episodio (verde = modelo acertó, rojo = falló).
-            Las barras de error muestran el rango MFE/MAE (máximo favorable y máximo adverso) durante la ventana de medición.<br>
-            <b>Panel inferior:</b> Equity curve acumulada (azul) y drawdown (rojo). Permite ver si el modelo
-            tiene una ventaja estadística consistente o es puntual.
-            </div>
-            """, unsafe_allow_html=True)
-
-            # ── Análisis por intensidad ─────────────────────────────────────
-            st.markdown('<div class="section-header">¿MAYOR INTENSIDAD = MEJOR SEÑAL?</div>', unsafe_allow_html=True)
-
-            if len(bt) >= 6:
-                q33 = bt["SI Máx."].quantile(0.33)
-                q66 = bt["SI Máx."].quantile(0.66)
-                bt["Intensidad"] = pd.cut(
-                    bt["SI Máx."],
-                    bins=[-np.inf, q33, q66, np.inf],
-                    labels=["🔵 Baja", "🟡 Media", "🔴 Alta"]
-                )
-                int_summary = bt.groupby("Intensidad", observed=True).apply(
-                    lambda g: pd.Series({
-                        "N episodios": len(g),
-                        "Win Rate": f"{(g['✓']=='✅').sum()/len(g)*100:.1f}%",
-                        "Ret. medio (%)": f"{g['Ret. Alineado (%)'].mean():+.2f}%",
-                        "SI medio": f"{g['SI Máx.'].mean():.1f}",
-                        "MFE medio (%)": f"{g['MFE (%)'].mean():.2f}%",
-                        "MAE medio (%)": f"{g['MAE (%)'].mean():.2f}%",
-                    })
-                ).reset_index()
-                st.dataframe(int_summary, use_container_width=True)
-                st.markdown("""
-                <div class="explain-box">
-                Si el win rate y el retorno medio son más altos en intensidad "Alta", el modelo tiene
-                poder predictivo genuino. Si son similares entre grupos, la intensidad no mejora la señal.
-                </div>
-                """, unsafe_allow_html=True)
-
-            # ── Tabla completa ────────────────────────────────────────────────
-            with st.expander("📋 Ver todos los episodios en detalle", expanded=False):
-                display_bt = bt.drop(columns=["_hit", "_aligned_return"], errors="ignore")
-                st.dataframe(
-                    display_bt.style.map(
-                        lambda v: "color: #00d68f; font-weight:600" if v == "✅"
-                        else "color: #ff4757; font-weight:600" if v == "❌" else "",
-                        subset=["✓"]
-                    ).map(
-                        lambda v: "color: #00d68f" if isinstance(v, (int, float)) and v > 0
-                        else "color: #ff4757" if isinstance(v, (int, float)) and v < 0 else "",
-                        subset=["Ret. Alineado (%)"]
-                    ),
-                    use_container_width=True,
-                    height=360,
-                )
     else:
-        st.info("👈 Pulsa **▶ Calcular** en la barra lateral para ejecutar el backtest.")
+        st.info("Primero calcula el modelo en la pestaña Dashboard para poder hacer el backtest.")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB: ESCANEO MULTI-ACTIVO
