@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
 Backtesting Real de Squeeze Wave usando la lógica exacta de daily_alerts.py
+
+Actualizado: listado de assets completado para alinearse con download_historical.py
+y subscriptions.json. Universo expandido a 10 activos para mayor robustez estadística
+en la estimación de expectancy post-compresión de ondas.
 """
 
 import os
@@ -19,13 +23,26 @@ DATA_DIR = Path("data/historical")
 RESULTS_DIR = Path("data")
 RESULTS_DIR.mkdir(exist_ok=True)
 
+# LISTADO COMPLETO DE ASSETS
+# Alineado con el sistema de producción (daily_alerts + subscriptions + download_historical)
+# Incluye: 2 índices equity, 3 commodities (oro, plata, petróleo via ETF), 
+# 3 pares forex majors, 2 cryptos.
+# Esto permite testear la hipótesis de compresión de volatilidad (squeeze wave)
+# a través de regímenes de mercado diferentes: equity trending, commodities con 
+# ciclos estacionales/lambda distintos, forex mean-reverting, crypto alta frecuencia.
+# Como en el enfoque de Jim Simons: sample size amplio + diversificación de 
+# asset classes para separar señal de ruido y estimar edge realista.
 ASSETS = {
-    "SPY": "SPY",
-    "QQQ": "QQQ",
-    "XAUUSD": "C:XAUUSD",
-    "BTCUSD": "X:BTCUSD",
-    "ETHUSD": "X:ETHUSD",
-    "EURUSD": "C:EURUSD",
+    "SPY": "SPY",                    # S&P 500
+    "QQQ": "QQQ",                    # Nasdaq-100
+    "XAUUSD": "C:XAUUSD",            # Oro
+    "XAGUSD": "C:XAGUSD",            # Plata
+    "BTCUSD": "X:BTCUSD",            # Bitcoin
+    "ETHUSD": "X:ETHUSD",            # Ethereum
+    "EURUSD": "C:EURUSD",            # Euro Dólar
+    "GBPUSD": "C:GBPUSD",            # Libra Dólar
+    "USDJPY": "C:USDJPY",            # Yen Dólar
+    "USO": "USO",                    # Petróleo (proxy WTI via ETF)
 }
 
 FORWARD_PERIODS = [1, 3, 5, 10, 20]
