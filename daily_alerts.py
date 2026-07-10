@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-Squeeze Wave Daily Alerts
-Alert condition changed to: ANY of the 3 conditions
+Squeeze Wave Daily Alerts - Con registro automático de señales
 """
 
 import json
 import os
-import requests
+import csv
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import numpy as np
@@ -18,20 +17,54 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 RECIPIENT_EMAIL = os.getenv("ALERT_EMAIL")
 
 SUBS_FILE = Path("subscriptions.json")
+SIGNALS_FILE = Path("data/signals_history.csv")
 
 ASSETS = {
-    "SPY (S&P 500)": "SPY", "QQQ (Nasdaq)": "QQQ",
-    "Oro (XAU/USD)": "C:XAUUSD", "BTC/USD": "X:BTCUSD",
-    "ETH/USD": "X:ETHUSD", "EUR/USD": "C:EURUSD",
+    "SPY (S&P 500)": "SPY",
+    "QQQ (Nasdaq)": "QQQ",
+    "Oro (XAU/USD)": "C:XAUUSD",
+    "BTC/USD": "X:BTCUSD",
+    "ETH/USD": "X:ETHUSD",
+    "EUR/USD": "C:EURUSD",
 }
 
 ALERT_MIN_SI = 75
 ALERT_MIN_STRENGTH = 0.60
 SCAN_DAYS = 120
-PARAMS = {"window": 20, "bb_mult": 2.0, "kc_mult": 1.5, "atr_period": 20, "threshold": 0.15, "use_spectrum": True, "use_vol_filter": True}
+PARAMS = {"window": 20, "bb_mult": 2.0, "kc_mult": 1.5, "atr_period": 20,
+          "threshold": 0.15, "use_spectrum": True, "use_vol_filter": True}
 
 UTC = timezone.utc
 
+# ==================== SIGNAL LOGGING ====================
+def ensure_signals_file():
+    if not SIGNALS_FILE.exists():
+        SIGNALS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(SIGNALS_FILE, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "timestamp", "ticker", "direction", "squeeze_index",
+                "signal_strength", "squeeze_detected", "trend", "lambda", "price", "priority"
+            ])
+
+def log_signal(last, ticker, priority="MEDIA"):
+    ensure_signals_file()
+    with open(SIGNALS_FILE, "a", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            datetime.now(UTC).isoformat(),
+            ticker,
+            last.get("Direction", ""),
+            round(last.get("SqueezeIndex", 0), 1),
+            round(last.get("SignalStrength", 0), 3),
+            last.get("SqueezeDetected", False),
+            round(last.get("Trend", 0), 3),
+            round(last.get("Lambda", 0), 1),
+            round(last.get("Close", 0), 4),
+            priority
+        ])
+
+# ==================== CORE FUNCTIONS ====================
 def fetch_data(ticker, days=365):
     now = datetime.now(UTC)
     end_date = (now + timedelta(days=1)).date()
@@ -41,7 +74,8 @@ def fetch_data(ticker, days=365):
         r = requests.get(url, timeout=15)
         r.raise_for_status()
         data = r.json()
-        if "results" not in data or not data.get("results"): return pd.DataFrame()
+        if "results" not in data or not data.get("results"):
+            return pd.DataFrame()
         df = pd.DataFrame(data["results"])
         df["Date"] = pd.to_datetime(df["t"], unit="ms").dt.date
         df["Open"] = df.get("o", df["c"])
@@ -178,7 +212,7 @@ def send_email_resend(to_email, subject, body):
         print(body)
         return False
     try:
-        r = requests.post("https://api.resend.com/emails", headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"}, json={"from": "Squeeze Alerts <alerts@resend.dev>", "to": [to_email], "subject": subject, "text": body}, timeout=15)
+        r = requests.get("https://api.resend.com/emails", headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"}, json={"from": "Squeeze Alerts <alerts@resend.dev>", "to": [to_email], "subject": subject, "text": body}, timeout=15)
         return r.status_code == 200
     except:
         return False
@@ -201,14 +235,16 @@ def main():
         df = calculate_squeeze_index(df, **PARAMS)
         if len(df) < 10: continue
         last = df.iloc[-1]
-        # NEW CONDITION: ANY of the 3 conditions
         si = last.get("SqueezeIndex", 0)
         strength = last.get("SignalStrength", 0)
         detected = last.get("SqueezeDetected", False)
+        # Condición: ANY of the 3
         if detected or si >= ALERT_MIN_SI or strength >= ALERT_MIN_STRENGTH:
+            priority = "ALTA" if si >= 90 else "MEDIA"
             icon = "🔴" if last["Direction"] == "Bajista" else "🔵"
-            body = f"SQUEEZE ALERT - {name}\n{icon} {last['Direction']}\nSqueezeDetected: {detected}\nSqueezeIndex: {si:.1f} (umbral {ALERT_MIN_SI})\nSignalStrength: {strength:.0%} (umbral {ALERT_MIN_STRENGTH})\nLambda: {last['Lambda']:.1f}d | Precio: {last['Close']:.4f}"
+            body = f"SQUEEZE ALERT - {name}\n{icon} {last['Direction']}\nSqueezeIndex: {si:.1f} | SignalStrength: {strength:.0%}\nTrend: {last.get('Trend', 0):+.3f} | Lambda: {last.get('Lambda', 0):.1f}d | Precio: {last.get('Close', 0):.4f}"
             send_email_resend(RECIPIENT_EMAIL, f"Squeeze Alert {name}", body)
+            log_signal(last, name, priority)
             active.append(name)
     print("Enviadas:", active if active else "Ninguna")
 
