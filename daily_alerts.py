@@ -23,9 +23,13 @@ ASSETS = {
     "SPY (S&P 500)": "SPY",
     "QQQ (Nasdaq)": "QQQ",
     "Oro (XAU/USD)": "C:XAUUSD",
+    "Plata (XAG/USD)": "C:XAGUSD",
     "BTC/USD": "X:BTCUSD",
     "ETH/USD": "X:ETHUSD",
     "EUR/USD": "C:EURUSD",
+    "Libra Dólar (GBP/USD)": "C:GBPUSD",
+    "Yen Dólar (USD/JPY)": "C:USDJPY",
+    "Petróleo (USO)": "USO",
 }
 
 ALERT_MIN_SI = 75
