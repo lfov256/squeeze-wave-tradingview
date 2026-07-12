@@ -698,8 +698,8 @@ def send_email_resend(to_email: str, subject: str, body: str):
 # PESTAÑAS
 # ══════════════════════════════════════════════════════════════════════════════
 
-tab_dash, tab_scan, tab_historico, tab_metodologia = st.tabs([
-    "Dashboard", "Escaneo Multi-Activo", "Histórico de Señales", "Metodología"
+tab_dash, tab_scan, tab_metodologia = st.tabs([
+    "Dashboard", "Escaneo Multi-Activo", "Metodología"
 ])
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -949,85 +949,6 @@ with tab_scan:
                 st.success("Enviado ✅") if ok else st.error(f"Error: {msg}")
         else:
             st.warning("No se obtuvieron resultados. Revisa la API key.")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB: HISTÓRICO DE SEÑALES
-# ─────────────────────────────────────────────────────────────────────────────
-with tab_historico:
-    st.markdown("## 📜 Histórico de Señales")
-    st.caption("Usa los parquets de data/historical/. Calcula y guarda señales persistentes.")
-
-    hist_asset = st.selectbox("Activo", list(ASSETS.keys()), key="hist_asset_final")
-    hist_ticker = ASSETS[hist_asset]
-
-    parquet_map = {
-        "C:EURUSD": "EURUSD.parquet", "C:GBPUSD": "GBPUSD.parquet",
-        "C:USDJPY": "USDJPY.parquet", "C:XAUUSD": "XAUUSD.parquet",
-        "C:XAGUSD": "XAGUSD.parquet", "SPY": "SPY.parquet",
-        "QQQ": "QQQ.parquet", "X:BTCUSD": "BTCUSD.parquet",
-        "X:ETHUSD": "ETHUSD.parquet", "USO": "USO.parquet",
-    }
-    pq_name = parquet_map.get(hist_ticker)
-
-    if st.button("🔄 Calcular y guardar señales históricas", type="primary"):
-        if not pq_name:
-            st.error("Activo no mapeado a parquet")
-        else:
-            pq_path = Path("data/historical") / pq_name
-            if not pq_path.exists():
-                st.error(f"No existe {pq_path}")
-            else:
-                try:
-                    df_raw = pd.read_parquet(pq_path)
-                    # Normalización defensiva
-                    if "Date" not in df_raw.columns:
-                        df_raw = df_raw.rename(columns={"timestamp": "Date", "t": "Date"})
-                    cols = ["Date", "Open", "High", "Low", "Close", "Volume"]
-                    df_raw = df_raw[[c for c in cols if c in df_raw.columns]].copy()
-                    df_raw["Date"] = pd.to_datetime(df_raw["Date"]).dt.date
-
-                    df_calc = calculate_squeeze_index(
-                        df_raw, window, bb_mult, kc_mult,
-                        atr_period, threshold, use_spectrum, use_vol_filter
-                    )
-
-                    signals_dir = Path("data/signals")
-                    signals_dir.mkdir(exist_ok=True)
-                    out_path = signals_dir / f"{pq_name.replace('.parquet', '')}_signals.parquet"
-                    df_calc.to_parquet(out_path, index=False)
-
-                    st.success(f"✅ Guardado correctamente → {out_path.name}")
-                    st.session_state["last_hist_df"] = df_calc
-                    st.session_state["last_hist_asset"] = hist_asset
-
-                except Exception as e:
-                    st.error(f"Error calculando: {str(e)[:200]}")
-
-    # Mostrar resultados si existen
-    if "last_hist_df" in st.session_state and st.session_state.get("last_hist_asset") == hist_asset:
-        df_hist = st.session_state["last_hist_df"]
-
-        st.markdown("### Gráfico histórico")
-        try:
-            fig = build_main_chart(df_hist, hist_asset)
-            st.plotly_chart(fig, use_container_width=True)
-        except Exception as e:
-            st.error(f"Error en gráfico: {e}")
-
-        st.markdown("### Episodios de compresión")
-        try:
-            eps = (df_hist[df_hist["SqueezeEpisode"] > 0]
-                   .groupby("SqueezeEpisode")
-                   .agg(Inicio=("Date", "first"),
-                        Fin=("Date", "last"),
-                        Días=("SqueezeEpisode", "count"),
-                        Max_SqueezeIndex=("SqueezeIndex", "max"),
-                        Dirección=("Direction", "last"))
-                   .reset_index()
-                   .sort_values("Inicio", ascending=False))
-            st.dataframe(eps, use_container_width=True, height=280)
-        except Exception as e:
-            st.warning(f"No se pudieron mostrar episodios: {e}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB: METODOLOGÍA
