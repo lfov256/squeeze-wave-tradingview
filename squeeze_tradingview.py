@@ -12,12 +12,6 @@ from datetime import datetime, timedelta, timezone
 import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from backtest_squeeze import (
-    detect_signals,
-    analyze_by_level,
-    calculate_forward_returns,
-    FORWARD_PERIODS
-)
 
 UTC = timezone.utc
 
@@ -161,7 +155,7 @@ st.markdown("""
 col_title, col_time = st.columns([3, 1])
 with col_title:
     st.markdown("# 〰️ SqueezeIndex v3.0")
-    st.caption("Física de Ondas · Análisis Espectral · Backtest Real por Episodios")
+    st.caption("Física de Ondas · Análisis Espectral · Detección de Compresión de Volatilidad")
 with col_time:
     st.markdown(f"""
     <div style='text-align:right; padding-top:12px; font-family:IBM Plex Mono,monospace; font-size:11px; color:#6b7685;'>
@@ -413,126 +407,6 @@ def calculate_squeeze_index(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# BACKTEST RIGUROSO
-# ══════════════════════════════════════════════════════════════════════════════
-
-def run_backtest(df: pd.DataFrame, forward_days: int = 5) -> tuple[pd.DataFrame, dict]:
-    """
-    Backtest post-episodio: mide el retorno real en los N días DESPUÉS del squeeze.
-    Devuelve DataFrame de episodios + dict de métricas agregadas.
-    """
-    records = []
-    episodes = df[df["SqueezeEpisode"] > 0]["SqueezeEpisode"].unique()
-
-    for ep_id in episodes:
-        ep_mask = df["SqueezeEpisode"] == ep_id
-        ep_data = df[ep_mask]
-        ep_end_i = ep_data.index[-1]
-        ep_end_pos = df.index.get_loc(ep_end_i)
-
-        fwd_end_pos = min(ep_end_pos + forward_days, len(df) - 1)
-        if fwd_end_pos <= ep_end_pos:
-            continue
-
-        entry_price = df["Close"].iloc[ep_end_pos]
-        exit_price = df["Close"].iloc[fwd_end_pos]
-        fwd_return = (exit_price - entry_price) / entry_price * 100
-
-        # Max favorable / max adverse (para ratio riesgo/recompensa)
-        fwd_slice = df.iloc[ep_end_pos + 1: fwd_end_pos + 1]
-        if len(fwd_slice) == 0:
-            continue
-        fwd_high = fwd_slice["High"].max()
-        fwd_low = fwd_slice["Low"].min()
-        max_favorable = (fwd_high - entry_price) / entry_price * 100
-        max_adverse = (fwd_low - entry_price) / entry_price * 100
-
-        last_day = ep_data.iloc[-1]
-        pred_dir = last_day["Direction"]
-        actual_dir = "Alcista" if fwd_return > 0 else "Bajista"
-        hit = (pred_dir == actual_dir) and (pred_dir != "Neutral")
-
-        # Retorno alineado con la señal (si predice alcista, retorno positivo = win)
-        if pred_dir == "Alcista":
-            aligned_return = fwd_return
-            mfe = max_favorable
-            mae = abs(max_adverse)
-        elif pred_dir == "Bajista":
-            aligned_return = -fwd_return  # short
-            mfe = abs(max_adverse)
-            mae = max_favorable
-        else:
-            aligned_return = 0
-            mfe = 0
-            mae = 0
-
-        records.append({
-            "Ep.": int(ep_id),
-            "Fin Episodio": str(df["Date"].iloc[ep_end_pos]),
-            "Duración": int(len(ep_data)),
-            "SI Máx.": round(last_day["SqueezeIndex"], 1),
-            "Trend": round(last_day["Trend"], 3),
-            "Señal": pred_dir,
-            "Precio Entrada": round(entry_price, 4),
-            "Precio Salida": round(exit_price, 4),
-            f"Retorno {forward_days}d (%)": round(fwd_return, 2),
-            "Ret. Alineado (%)": round(aligned_return, 2),
-            "MFE (%)": round(mfe, 2),
-            "MAE (%)": round(mae, 2),
-            "Real": actual_dir,
-            "✓": "✅" if hit else "❌",
-            "_hit": hit,
-            "_aligned_return": aligned_return,
-        })
-
-    bt = pd.DataFrame(records)
-    if bt.empty:
-        return bt, {}
-
-    # ─── Métricas agregadas ───────────────────────────────────────────────────
-    total = len(bt)
-    wins = bt[bt["_hit"] == True]
-    losses = bt[bt["_hit"] == False]
-    win_rate = len(wins) / total * 100 if total > 0 else 0
-
-    avg_win = wins["_aligned_return"].mean() if len(wins) > 0 else 0
-    avg_loss = losses["_aligned_return"].mean() if len(losses) > 0 else 0
-    # Payoff ratio: promedio ganancia / promedio pérdida (absoluto)
-    payoff = avg_win / abs(avg_loss) if avg_loss != 0 else np.nan
-    # Expectancy por operación
-    expectancy = (win_rate / 100 * avg_win) + ((1 - win_rate / 100) * avg_loss)
-    # Profit factor
-    gross_wins = wins["_aligned_return"].sum() if len(wins) > 0 else 0
-    gross_losses = abs(losses["_aligned_return"].sum()) if len(losses) > 0 else 0
-    profit_factor = gross_wins / gross_losses if gross_losses > 0 else np.nan
-    # Sharpe aproximado (anualizado, asumiendo 252 días)
-    ret_series = bt["_aligned_return"]
-    sharpe = (ret_series.mean() / ret_series.std() * np.sqrt(252 / forward_days)) if ret_series.std() > 0 else 0
-    # Drawdown máximo en retornos acumulados
-    cum_ret = ret_series.cumsum()
-    rolling_max = cum_ret.cummax()
-    drawdown = (cum_ret - rolling_max)
-    max_dd = drawdown.min()
-    # Calmar ratio
-    total_cum = cum_ret.iloc[-1] if len(cum_ret) > 0 else 0
-    calmar = total_cum / abs(max_dd) if max_dd != 0 else np.nan
-
-    metrics = {
-        "total": total,
-        "win_rate": win_rate,
-        "avg_win": avg_win,
-        "avg_loss": avg_loss,
-        "payoff": payoff,
-        "expectancy": expectancy,
-        "profit_factor": profit_factor,
-        "sharpe": sharpe,
-        "max_dd": max_dd,
-        "calmar": calmar,
-        "total_cum": total_cum,
-        "gross_wins": gross_wins,
-        "gross_losses": gross_losses,
-    }
-    return bt, metrics
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -747,105 +621,6 @@ def build_main_chart(df: pd.DataFrame, asset_name: str) -> go.Figure:
     return fig
 
 
-def build_backtest_chart(bt: pd.DataFrame, metrics: dict, forward_days: int) -> go.Figure:
-    """
-    Gráfico de backtest en 2 paneles:
-    1. Retorno alineado por episodio (verde/rojo = acierto/fallo)
-    2. Curva de equity acumulada
-    """
-    if bt.empty:
-        return go.Figure()
-
-    fig = make_subplots(
-        rows=2, cols=1,
-        row_heights=[0.55, 0.45],
-        vertical_spacing=0.08,
-        subplot_titles=["", ""],
-    )
-
-    # Panel 1: Barras de retorno por episodio
-    colors_ep = [COLORS["green"] if h else COLORS["red"] for h in bt["_hit"]]
-    fig.add_trace(go.Bar(
-        x=[f"Ep.{r['Ep.']}<br>{r['Fin Episodio']}" for _, r in bt.iterrows()],
-        y=bt["Ret. Alineado (%)"],
-        marker=dict(color=colors_ep, opacity=0.85, line=dict(width=0)),
-        text=[f"{v:+.2f}%" for v in bt["Ret. Alineado (%)"]],
-        textposition="outside",
-        textfont=dict(size=9, family="IBM Plex Mono"),
-        name="Retorno alineado",
-        hovertemplate=(
-            "<b>Episodio %{x}</b><br>"
-            "Retorno: %{y:.2f}%<br>"
-            "<extra></extra>"
-        )
-    ), row=1, col=1)
-
-    # MAE como error bars (riesgo asumido)
-    fig.add_trace(go.Scatter(
-        x=[f"Ep.{r['Ep.']}<br>{r['Fin Episodio']}" for _, r in bt.iterrows()],
-        y=[0] * len(bt),
-        mode="markers",
-        marker=dict(size=0, opacity=0),
-        error_y=dict(
-            type="data",
-            array=bt["MFE (%)"].tolist(),
-            arrayminus=bt["MAE (%)"].tolist(),
-            visible=True,
-            color="rgba(255,255,255,0.15)",
-            thickness=1.5,
-            width=4
-        ),
-        name="MFE/MAE range",
-        showlegend=False,
-    ), row=1, col=1)
-
-    fig.add_hline(y=0, line_color="#2a3440", line_width=1.2, row=1, col=1)
-
-    # Panel 2: Equity curve
-    cum_ret = bt["Ret. Alineado (%)"].cumsum()
-    fig.add_trace(go.Scatter(
-        x=list(range(1, len(cum_ret) + 1)),
-        y=cum_ret,
-        line=dict(color=COLORS["blue"], width=2.5),
-        fill="tozeroy",
-        fillcolor=f"rgba(77,166,255,0.08)",
-        name="Equity acumulada",
-    ), row=2, col=1)
-
-    # Marcar drawdown
-    rolling_max = cum_ret.cummax()
-    dd = cum_ret - rolling_max
-    fig.add_trace(go.Scatter(
-        x=list(range(1, len(dd) + 1)),
-        y=dd,
-        fill="tozeroy",
-        fillcolor="rgba(255,71,87,0.12)",
-        line=dict(color="rgba(255,71,87,0.4)", width=1),
-        name="Drawdown",
-    ), row=2, col=1)
-
-    fig.add_hline(y=0, line_color="#2a3440", line_width=1, row=2, col=1)
-
-    fig.update_layout(
-        height=480,
-        margin=dict(l=8, r=8, t=8, b=8),
-        paper_bgcolor=COLORS["bg"],
-        plot_bgcolor=COLORS["panel"],
-        font=dict(family="IBM Plex Mono, monospace", size=10, color=COLORS["text"]),
-        legend=dict(
-            orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0,
-            bgcolor="rgba(0,0,0,0)", font=dict(size=10)
-        ),
-        hovermode="x unified",
-        hoverlabel=dict(bgcolor="#0d1117", bordercolor="#1e2630",
-                        font=dict(family="IBM Plex Mono, monospace", size=11)),
-        bargap=0.15,
-    )
-    for i in range(1, 3):
-        fig.update_xaxes(gridcolor="#151c24", tickfont=dict(size=9), row=i, col=1)
-        fig.update_yaxes(gridcolor="#151c24", tickfont=dict(size=9), row=i, col=1)
-
-    return fig
 
 
 def build_scan_chart(df_res: pd.DataFrame) -> go.Figure:
@@ -922,8 +697,8 @@ def send_email_resend(to_email: str, subject: str, body: str):
 # PESTAÑAS
 # ══════════════════════════════════════════════════════════════════════════════
 
-tab_dash, tab_backtest, tab_scan, tab_metodologia = st.tabs([
-    "📈 Dashboard", "🎯 Backtest", "🔭 Escaneo Multi-Activo", "🧠 Metodología"
+tab_dash, tab_scan, tab_metodologia = st.tabs([
+    "📈 Dashboard", "🔭 Escaneo Multi-Activo", "🧠 Metodología"
 ])
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1078,66 +853,6 @@ with tab_dash:
         """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB: BACKTEST
-# ─────────────────────────────────────────────────────────────────────────────
-with tab_backtest:
-    st.markdown("## Backtest — Señales Diarias (Lógica de Producción)")
-    
-    st.markdown("""
-    <div class="explain-box">
-    Este backtest usa <b>exactamente la misma lógica</b> que las alertas automáticas diarias.<br>
-    Detecta señales cada día que cumple las condiciones de compresión de ondas y mide los retornos reales 
-    en los días siguientes (1, 3, 5, 10 y 20 días).<br>
-    Los resultados se agrupan por nivel de <b>SqueezeIndex</b> para ver si a mayor compresión hay mejor expectancy.
-    </div>
-    """, unsafe_allow_html=True)
-
-    if "df" in dir() and not df.empty:
-        with st.spinner("Calculando backtest con lógica de producción..."):
-            # 1. Añadir retornos forward
-            df_bt = calculate_forward_returns(df.copy())
-            
-            # 2. Asegurar que tiene SqueezeIndex calculado
-            if "SqueezeIndex" not in df_bt.columns:
-                df_bt = calculate_squeeze_index(df_bt, **PARAMS)
-            
-            # 3. Detectar señales (misma función que daily_alerts)
-            signals_df = detect_signals(df_bt)
-            
-            if signals_df.empty:
-                st.warning("No se detectaron señales en este activo con los parámetros actuales.")
-            else:
-                # === RESUMEN POR NIVEL DE COMPRESIÓN ===
-                st.markdown("### Resumen por nivel de SqueezeIndex")
-                summary = analyze_by_level(signals_df)
-                st.dataframe(summary, use_container_width=True)
-                
-                # === SEÑALES DETALLADAS ===
-                with st.expander(f"Ver todas las señales detectadas ({len(signals_df)})", expanded=False):
-                    st.dataframe(signals_df.sort_values("date", ascending=False), use_container_width=True)
-                
-                # Guardar resultados (igual que el script standalone)
-                output_path = Path("data/backtest_squeeze_produccion.csv")
-                signals_df.to_csv(output_path, index=False)
-                st.success(f"Resultados guardados en: {output_path}")
-                
-                # Métricas rápidas
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Total señales", len(signals_df))
-                with col2:
-                    if "fwd_return_5d" in signals_df.columns:
-                        exp_5d = signals_df["fwd_return_5d"].mean()
-                        st.metric("Expectancy 5 días", f"{exp_5d:+.2f}%")
-                with col3:
-                    if "fwd_return_5d" in signals_df.columns:
-                        win_5d = (signals_df["fwd_return_5d"] > 0).mean() * 100
-                        st.metric("Win Rate 5 días", f"{win_5d:.1f}%")
-
-    else:
-        st.info("Primero calcula el modelo en la pestaña Dashboard para poder hacer el backtest.")
-
-# ─────────────────────────────────────────────────────────────────────────────
 # TAB: ESCANEO MULTI-ACTIVO
 # ─────────────────────────────────────────────────────────────────────────────
 with tab_scan:
@@ -1165,9 +880,6 @@ with tab_scan:
             if len(df_s) < 10:
                 continue
             last_s = df_s.iloc[-1]
-            bt_s, met_s = run_backtest(df_s, forward_days=5)
-            prec_s = met_s.get("win_rate") if met_s else None
-            exp_s = met_s.get("expectancy") if met_s else None
 
             results.append({
                 "Activo": name,
@@ -1179,8 +891,6 @@ with tab_scan:
                 "Lambda Ω": round(last_s["Lambda"], 1),
                 "Precio": round(last_s["Close"], 4),
                 "Ep. históricos": int(df_s["SqueezeEpisode"].max()),
-                "Win Rate bt.": f"{prec_s:.0f}%" if prec_s is not None else "—",
-                "Expectancy bt.": f"{exp_s:+.2f}%" if exp_s is not None else "—",
             })
 
         prog_bar.empty()
@@ -1224,7 +934,7 @@ with tab_scan:
             if send_btn and user_email:
                 active = df_res[df_res["Señal"] != "—"]
                 signals_str = "\n".join(
-                    f"• {r['Activo']}: {r['Señal']} | {r['Dirección']} | SI {r['SI']} | WR {r['Win Rate bt.']}"
+                    f"• {r['Activo']}: {r['Señal']} | {r['Dirección']} | SI {r['SI']} "
                     for _, r in active.iterrows()
                 ) or "Sin señales activas en este momento."
                 body = (
