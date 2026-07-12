@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║   SQUEEZE INDEX                                    ║    ║
+║   SQUEEZE INDEX                                     ║    ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 import streamlit as st
@@ -12,7 +12,6 @@ from datetime import datetime, timedelta, timezone
 import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from pathlib import Path
 
 UTC = timezone.utc
 
@@ -155,8 +154,8 @@ st.markdown("""
 # ── Header ─────────────────────────────────────────────────────────────────────
 col_title, col_time = st.columns([3, 1])
 with col_title:
-    st.markdown("# 〰️ SqueezeIndex v3.0")
-    st.caption("Física de Ondas · Análisis Espectral · Detección de Compresión de Volatilidad")
+    st.markdown("# 〰️ SqueezeIndex")
+    st.caption("Detección de Compresión de Volatilidad")
 with col_time:
     st.markdown(f"""
     <div style='text-align:right; padding-top:12px; font-family:IBM Plex Mono,monospace; font-size:11px; color:#6b7685;'>
@@ -674,32 +673,12 @@ def render_kpis(kpis: list):
         with col:
             st.markdown(kpi_card(label, value, sub, color), unsafe_allow_html=True)
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# EMAIL
-# ══════════════════════════════════════════════════════════════════════════════
-
-def send_email_resend(to_email: str, subject: str, body: str):
-    RESEND_KEY = st.secrets["RESEND_API_KEY"]
-    try:
-        r = requests.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {RESEND_KEY}", "Content-Type": "application/json"},
-            json={"from": "SqueezeIndex v3 <onboarding@resend.dev>",
-                  "to": [to_email], "subject": subject, "text": body},
-            timeout=15
-        )
-        return (True, "OK") if r.status_code == 200 else (False, r.text[:150])
-    except Exception as e:
-        return False, str(e)[:120]
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # PESTAÑAS
 # ══════════════════════════════════════════════════════════════════════════════
 
 tab_dash, tab_scan, tab_metodologia = st.tabs([
-    "Dashboard", "Escaneo Multi-Activo", "Metodología"
+    "📈 Dashboard", "🔭 Escaneo Multi-Activo", "🧠 Metodología"
 ])
 
 # ─────────────────────────────────────────────────────────────────────────────
