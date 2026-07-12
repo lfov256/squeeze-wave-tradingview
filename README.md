@@ -8,10 +8,11 @@ El enfoque es pragmático: detectar regímenes donde se acumula "energía" duran
 
 ## Estado del proyecto
 - App Streamlit completa y operativa (`squeeze_tradingview.py`)
-- Backtest riguroso por episodios con métricas reales (expectancy, profit factor, Sharpe, Calmar, etc.)
+- Pestaña **"Histórico de Señales"** para calcular y consultar gráficamente episodios de squeeze pasados sobre datos locales (parquet)
+- Backtest episode-based riguroso integrado en la interfaz (el script standalone `scripts/backtest_squeeze.py` fue eliminado por simplificación)
 - Alertas diarias automatizadas por email (8:00 AM CEST, martes a viernes)
-- Datos vía Polygon / Massive API
-- Totalmente funcional para análisis individual, escaneo multi-activo y alertas
+- Datos vía Polygon / Massive API + cache local en Parquet
+- Totalmente funcional para análisis individual, escaneo multi-activo y revisión histórica
 
 ## Instalación y uso local
 
@@ -22,7 +23,18 @@ pip install -r requirements.txt
 streamlit run squeeze_tradingview.py
 ```
 
-Requiere API key de Polygon (almacenada como secret `POLYGON_API_KEY` o variable de entorno). La app funciona tanto localmente como desplegada en Streamlit Cloud.
+Requiere API key de Polygon (almacenada como secret `POLYGON_API_KEY` o variable de entorno). La app funciona tanto localmente como desplegada en Streamlit Cloud. Los datos históricos en `data/historical/*.parquet` permiten cálculos rápidos sin llamadas API repetidas.
+
+## Nueva funcionalidad: Histórico de Señales
+
+La pestaña **"📜 Histórico de Señales"** permite:
+- Cargar los ficheros `.parquet` de `data/historical/`
+- Ejecutar el modelo completo (Lambda Ω por Welch espectral + SqueezeIndex + episodios + Trend compuesto)
+- Guardar los resultados en `data/signals/{ticker}_signals.parquet`
+- Visualizar gráficamente el mismo chart de 4 paneles con zonas de compresión y marcadores de señal
+- Consultar tabla de episodios históricos (duración, máx. SqueezeIndex, dirección)
+
+Esto facilita el análisis retrospectivo y el estudio de señales pasadas sin recalcular todo cada vez.
 
 ## Conceptos matemáticos clave
 
@@ -51,7 +63,7 @@ Dirección de la presión acumulada durante el squeeze, calculada con 4 componen
 La señal fuerte solo se activa cuando hay squeeze + Trend supera umbral configurable + filtro de volatilidad (evita señales cuando el mercado ya está explotando).
 
 ## Backtest por episodios
-El backtest no usa retornos raw. Opera al **final de cada episodio** de squeeze:
+El backtest opera al **final de cada episodio** de squeeze (lógica integrada en la app Streamlit):
 1. Registra la dirección que predecía el modelo.
 2. Mide el retorno real en los N días siguientes.
 3. Alinea el retorno según la señal (long si alcista, short si bajista).
@@ -81,12 +93,13 @@ El modelo es una herramienta de **contexto y scanner de atención**, no un siste
 
 | Archivo / Carpeta              | Propósito                                      |
 |--------------------------------|--------------------------------------------------|
-| `squeeze_tradingview.py`      | App Streamlit completa (dashboard, backtest, escaneo multi-activo, email) |
+| `squeeze_tradingview.py`      | App Streamlit completa (dashboard, escaneo multi-activo, **histórico de señales**, backtest integrado) |
 | `daily_alerts.py`             | Lógica de generación y envío de alertas diarias     |
 | `subscriptions.json`          | Lista de activos monitorizados para alertas      |
 | `.github/workflows/`          | Automatización de alertas (GitHub Actions)     |
-| `scripts/`                    | Utilidades (backtest standalone, descarga histórica) |
+| `scripts/`                    | Utilidades (descarga histórica). El script de backtest standalone fue eliminado |
 | `data/historical/`            | Datos cacheados en formato Parquet               |
+| `data/signals/`               | Señales históricas precalculadas (parquet por activo) |
 
 ## Alertas diarias
 Las alertas se envían automáticamente a las 8:00 AM CEST (martes-viernes) con los activos que presentan compresión activa. Para modificar la lista de activos edita `subscriptions.json` o usa la interfaz de la app Streamlit.
@@ -98,4 +111,4 @@ Enfoque cuantitativo y pragmático: medir lo que realmente funciona con backtest
 
 ---
 
-**SqueezeIndex v3.0** — Compresión de ondas + análisis espectral + backtest riguroso
+**SqueezeIndex v3.0** — Compresión de ondas + análisis espectral + backtest riguroso + revisión histórica de señales
