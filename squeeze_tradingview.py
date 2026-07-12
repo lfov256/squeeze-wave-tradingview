@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║   SQUEEZE INDEX v3.0 — Rediseño Completo                                    ║    ║
+║   SQUEEZE INDEX                                    ║    ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 import streamlit as st
@@ -17,7 +17,7 @@ from pathlib import Path
 UTC = timezone.utc
 
 st.set_page_config(
-    page_title="SqueezeIndex v3.0",
+    page_title="SqueezeIndex",
     page_icon="〰️",
     layout="wide",
     initial_sidebar_state="expanded"
