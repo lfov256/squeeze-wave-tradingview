@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from pathlib import Path
 
 UTC = timezone.utc
 
@@ -697,8 +698,8 @@ def send_email_resend(to_email: str, subject: str, body: str):
 # PESTAÑAS
 # ══════════════════════════════════════════════════════════════════════════════
 
-tab_dash, tab_scan, tab_metodologia = st.tabs([
-    "📈 Dashboard", "🔭 Escaneo Multi-Activo", "🧠 Metodología"
+tab_dash, tab_scan, tab_historico, tab_metodologia = st.tabs([
+    "Dashboard", "Escaneo Multi-Activo", "Histórico de Señales", "Metodología"
 ])
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -948,6 +949,112 @@ with tab_scan:
                 st.success("Enviado ✅") if ok else st.error(f"Error: {msg}")
         else:
             st.warning("No se obtuvieron resultados. Revisa la API key.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: HISTÓRICO DE SEÑALES (nuevo)
+# ─────────────────────────────────────────────────────────────────────────────
+with tab_historico:
+    st.markdown("## 📜 Histórico de Señales — Análisis Retrospectivo")
+    st.caption("Usa los ficheros parquet locales de `data/historical/`. Calcula squeezes con tu modelo de ondas, guarda los resultados y permite consultar gráficamente episodios y señales del pasado.")
+
+    hist_asset = st.selectbox("Activo", list(ASSETS.keys()), key="hist_asset")
+    hist_ticker = ASSETS[hist_asset]
+
+    # Mapeo ticker → fichero parquet
+    parquet_map = {
+        "C:EURUSD": "EURUSD.parquet",
+        "C:GBPUSD": "GBPUSD.parquet",
+        "C:USDJPY": "USDJPY.parquet",
+        "C:XAUUSD": "XAUUSD.parquet",
+        "C:XAGUSD": "XAGUSD.parquet",
+        "SPY": "SPY.parquet",
+        "QQQ": "QQQ.parquet",
+        "X:BTCUSD": "BTCUSD.parquet",
+        "X:ETHUSD": "ETHUSD.parquet",
+        "USO": "USO.parquet",
+    }
+    parquet_name = parquet_map.get(hist_ticker)
+
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        calc_btn = st.button("🔄 Calcular y guardar señales históricas", type="primary", use_container_width=True)
+    with c2:
+        load_btn = st.button("📂 Cargar señales ya guardadas", use_container_width=True)
+
+    signals_dir = Path("data/signals")
+    signals_dir.mkdir(exist_ok=True)
+
+    def _normalize_df(df: pd.DataFrame) -> pd.DataFrame:
+        """Asegura columnas que espera calculate_squeeze_index"""
+        df = df.copy()
+        if "Date" not in df.columns:
+            for col in ["timestamp", "time", "date"]:
+                if col in df.columns:
+                    df["Date"] = pd.to_datetime(df[col]).dt.date
+                    break
+        # Añade Volume si falta (algunos parquets pueden no tenerlo)
+        if "Volume" not in df.columns:
+            df["Volume"] = 0
+        return df[["Date", "Open", "High", "Low", "Close", "Volume"]].dropna()
+
+    if calc_btn and parquet_name:
+        pq_path = Path("data/historical") / parquet_name
+        if not pq_path.exists():
+            st.error(f"No existe {pq_path}")
+        else:
+            with st.spinner("Cargando parquet y calculando squeezes..."):
+                df_raw = pd.read_parquet(pq_path)
+                df_raw = _normalize_df(df_raw)
+                df_hist = calculate_squeeze_index(
+                    df_raw, window, bb_mult, kc_mult,
+                    atr_period, threshold, use_spectrum, use_vol_filter
+                )
+            out_file = signals_dir / f"{parquet_name.replace('.parquet','')}_signals.parquet"
+            df_hist.to_parquet(out_file, index=False)
+            st.success(f"✅ Señales guardadas en {out_file.name} ({len(df_hist)} barras)")
+
+            # Mostrar inmediatamente
+            st.markdown("### Gráfico histórico completo")
+            fig = build_main_chart(df_hist, hist_asset)
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Tabla de episodios
+            st.markdown("### Episodios de compresión detectados")
+            ep = df_hist[df_hist["SqueezeEpisode"] > 0].groupby("SqueezeEpisode").agg(
+                Inicio=("Date", "first"),
+                Fin=("Date", "last"),
+                Duración_días=("SqueezeEpisode", "count"),
+                Max_SqueezeIndex=("SqueezeIndex", "max"),
+                Dirección=("Direction", "last"),
+                Señal_fuerte=("SqueezeDetected", "max"),
+            ).reset_index().sort_values("Inicio", ascending=False)
+            st.dataframe(ep, use_container_width=True, height=280)
+
+    if load_btn and parquet_name:
+        out_file = signals_dir / f"{parquet_name.replace('.parquet','')}_signals.parquet"
+        if out_file.exists():
+            df_hist = pd.read_parquet(out_file)
+            st.success(f"Cargado {out_file.name}")
+            st.markdown("### Gráfico histórico")
+            fig = build_main_chart(df_hist, hist_asset)
+            st.plotly_chart(fig, use_container_width=True)
+
+            st.markdown("### Episodios históricos")
+            ep = df_hist[df_hist["SqueezeEpisode"] > 0].groupby("SqueezeEpisode").agg(
+                Inicio=("Date", "first"),
+                Fin=("Date", "last"),
+                Duración_días=("SqueezeEpisode", "count"),
+                Max_SqueezeIndex=("SqueezeIndex", "max"),
+                Dirección=("Direction", "last"),
+            ).reset_index().sort_values("Inicio", ascending=False)
+            st.dataframe(ep, use_container_width=True, height=280)
+        else:
+            st.warning("Todavía no hay señales guardadas para este activo. Pulsa primero 'Calcular y guardar'.")
+
+    st.markdown("---")
+    st.caption("Los ficheros `.parquet` de señales se guardan en `data/signals/`. Puedes usarlos después para backtests extendidos o análisis adicionales fuera de la app.")
+
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB: METODOLOGÍA
