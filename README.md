@@ -25,16 +25,6 @@ streamlit run squeeze_tradingview.py
 
 Requiere API key de Polygon (almacenada como secret `POLYGON_API_KEY` o variable de entorno). La app funciona tanto localmente como desplegada en Streamlit Cloud. Los datos históricos en `data/historical/*.parquet` permiten cálculos rápidos sin llamadas API repetidas.
 
-## Nueva funcionalidad: Histórico de Señales
-
-La pestaña **"📜 Histórico de Señales"** permite:
-- Cargar los ficheros `.parquet` de `data/historical/`
-- Ejecutar el modelo completo (Lambda Ω por Welch espectral + SqueezeIndex + episodios + Trend compuesto)
-- Guardar los resultados en `data/signals/{ticker}_signals.parquet`
-- Visualizar gráficamente el mismo chart de 4 paneles con zonas de compresión y marcadores de señal
-- Consultar tabla de episodios históricos (duración, máx. SqueezeIndex, dirección)
-
-Esto facilita el análisis retrospectivo y el estudio de señales pasadas sin recalcular todo cada vez.
 
 ## Conceptos matemáticos clave
 
@@ -62,24 +52,6 @@ Dirección de la presión acumulada durante el squeeze, calculada con 4 componen
 
 La señal fuerte solo se activa cuando hay squeeze + Trend supera umbral configurable + filtro de volatilidad (evita señales cuando el mercado ya está explotando).
 
-## Backtest por episodios
-El backtest opera al **final de cada episodio** de squeeze (lógica integrada en la app Streamlit):
-1. Registra la dirección que predecía el modelo.
-2. Mide el retorno real en los N días siguientes.
-3. Alinea el retorno según la señal (long si alcista, short si bajista).
-
-Métricas reportadas:
-- Win Rate
-- Expectancy por operación
-- Profit Factor
-- Sharpe aproximado (anualizado)
-- Max Drawdown
-- Calmar Ratio
-- Payoff Ratio
-- MFE / MAE por episodio
-
-**Importante**: los retornos son brutos (sin comisiones, slippage ni gestión de posición). Sirven para evaluar si el modelo aporta información predictiva real, no para proyectar beneficios.
-
 ## Limitaciones (documentadas de forma objetiva)
 - No predice el timing exacto de la ruptura (puede ocurrir en 1 día o en 2-3 semanas).
 - Backtest in-sample; para validación robusta se recomienda reservar datos out-of-sample.
@@ -101,14 +73,3 @@ El modelo es una herramienta de **contexto y scanner de atención**, no un siste
 | `data/historical/`            | Datos cacheados en formato Parquet               |
 | `data/signals/`               | Señales históricas precalculadas (parquet por activo) |
 
-## Alertas diarias
-Las alertas se envían automáticamente a las 8:00 AM CEST (martes-viernes) con los activos que presentan compresión activa. Para modificar la lista de activos edita `subscriptions.json` o usa la interfaz de la app Streamlit.
-
-Para forzar una alerta de prueba: ve a la pestaña Actions → workflow "Daily Squeeze Wave Email Alerts" → Run workflow.
-
-## Filosofía del proyecto
-Enfoque cuantitativo y pragmático: medir lo que realmente funciona con backtest transparente, documentar limitaciones sin adornos y mantener el sistema simple y operable. El objetivo no es predecir el futuro con precisión, sino identificar regímenes de alta probabilidad de movimiento significativo y actuar en consecuencia con disciplina.
-
----
-
-**SqueezeIndex v3.0** — Compresión de ondas + análisis espectral + backtest riguroso + revisión histórica de señales
