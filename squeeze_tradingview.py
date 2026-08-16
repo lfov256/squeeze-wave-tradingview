@@ -171,78 +171,43 @@ with col_time:
 with st.sidebar:
     st.markdown("### 🎛️ Parámetros")
     ASSETS = {
-    # ── FX ────────────────────────────────────────────────────────────
+    # FX
     "EUR/USD": "C:EURUSD",
     "GBP/USD": "C:GBPUSD",
     "USD/JPY": "C:USDJPY",
     "AUD/USD": "C:AUDUSD",
-    "USD/CAD": "C:USDCAD",
     "EUR/JPY": "C:EURJPY",
-    "GBP/JPY": "C:GBPJPY",
-    "USD/CHF": "C:USDCHF",
-    "EUR/GBP": "C:EURGBP",
-    "NZD/USD": "C:NZDUSD",
-    "USD/MXN": "C:USDMXN",
-    "EUR/CHF": "C:EURCHF",
 
-    # ── Metales & Commodities ─────────────────────────────────────────
+    # Metales & Oil
     "Oro (XAU/USD)": "C:XAUUSD",
     "Plata (XAG/USD)": "C:XAGUSD",
-    "GLD (Gold ETF)": "GLD",
-    "SLV (Silver ETF)": "SLV",
     "USO (Petróleo)": "USO",
-    "BNO (Brent)": "BNO",
-    "UNG (Natural Gas)": "UNG",
-    "CPER (Copper)": "CPER",
+    "GLD (Gold ETF)": "GLD",
 
-    # ── Índices vía ETF ───────────────────────────────────────────────
+    # Índices ETF
     "SPY (S&P 500)": "SPY",
     "QQQ (Nasdaq)": "QQQ",
     "DIA (Dow Jones)": "DIA",
-    "IWM (Russell 2000)": "IWM",
-    "EWG (Alemania)": "EWG",
-    "EWQ (Francia)": "EWQ",
-    "EWP (España)": "EWP",
-    "FEZ (EuroStoxx 50)": "FEZ",
-    "TLT (Bonos 20y)": "TLT",
 
-    # ── High-beta Tech ────────────────────────────────────────────────
+    # High-beta Tech (los más negociados en turbos)
     "NVDA": "NVDA",
     "TSLA": "TSLA",
     "AMD": "AMD",
     "META": "META",
     "AMZN": "AMZN",
     "AAPL": "AAPL",
-    "GOOGL": "GOOGL",
     "MSFT": "MSFT",
-    "AVGO": "AVGO",
-    "NFLX": "NFLX",
-    "PLTR": "PLTR",
-    "SMCI": "SMCI",
-    "ARM": "ARM",
-    "COIN": "COIN",
-    "CRWD": "CRWD",
-    "SNOW": "SNOW",
+    "GOOGL": "GOOGL",
 
-    # ── Spanish / European ADRs ───────────────────────────────────────
+    # Spanish ADRs
     "SAN (Santander)": "SAN",
     "BBVA": "BBVA",
     "TEF (Telefónica)": "TEF",
-    "IBDRY (Iberdrola)": "IBDRY",
-    "GRFS (Grifols)": "GRFS",
 
-    # ── Otros blue-chips ──────────────────────────────────────────────
-    "BA (Boeing)": "BA",
-    "JPM": "JPM",
-    "XOM": "XOM",
-    "CVX": "CVX",
+    # Otros
     "MOH (Molina Healthcare)": "MOH",
-    "UNH": "UNH",
-    "JNJ": "JNJ",
-    "PG": "PG",
-    "V": "V",
-    "MA": "MA",
-  }
+    "JPM": "JPM",
+}
     selected_asset = st.selectbox("Activo", list(ASSETS.keys()))
     ticker = ASSETS[selected_asset]
     days = st.slider("Días de histórico", 60, 730, 365)
@@ -917,7 +882,7 @@ with tab_scan:
         for idx, (name, tk) in enumerate(asset_list):
             prog_bar.progress((idx + 1) / len(asset_list))
             status_txt.markdown(f"<small style='color:#6b7685'>Analizando {name}…</small>", unsafe_allow_html=True)
-            time.sleep(0.45)          # Para evitar que pete la API
+            time.sleep(1.8)          # Para evitar que pete la API
             df_s = fetch_data(tk, scan_days)
             
             if df_s.empty or len(df_s) < 40:
