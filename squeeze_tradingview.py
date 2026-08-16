@@ -169,8 +169,7 @@ with col_time:
 # ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
     st.markdown("### 🎛️ Parámetros")
-
-ASSETS = {
+    ASSETS = {
     # ── FX ────────────────────────────────────────────────────────────
     "EUR/USD": "C:EURUSD",
     "GBP/USD": "C:GBPUSD",
@@ -182,7 +181,6 @@ ASSETS = {
     "USD/CHF": "C:USDCHF",
     "EUR/GBP": "C:EURGBP",
     "NZD/USD": "C:NZDUSD",
-
     # ── Metales & Commodities ─────────────────────────────────────────
     "Oro (XAU/USD)": "C:XAUUSD",
     "Plata (XAG/USD)": "C:XAGUSD",
@@ -192,7 +190,6 @@ ASSETS = {
     "BNO (Brent)": "BNO",
     "UNG (Natural Gas)": "UNG",
     "CPER (Copper)": "CPER",
-
     # ── Índices & ETFs ────────────────────────────────────────────────
     "SPY (S&P 500)": "SPY",
     "QQQ (Nasdaq)": "QQQ",
@@ -207,7 +204,6 @@ ASSETS = {
     "EWP (España)": "EWP",
     "FEZ (EuroStoxx 50)": "FEZ",
     "TLT (Bonos 20y)": "TLT",
-
     # ── High-beta Tech ────────────────────────────────────────────────
     "NVDA": "NVDA",
     "TSLA": "TSLA",
@@ -223,21 +219,19 @@ ASSETS = {
     "SMCI": "SMCI",
     "ARM": "ARM",
     "COIN": "COIN",
-
     # ── Spanish / European ADRs ───────────────────────────────────────
     "SAN (Santander)": "SAN",
     "BBVA": "BBVA",
     "TEF (Telefónica)": "TEF",
     "IBDRY (Iberdrola)": "IBDRY",
     "GRFS (Grifols)": "GRFS",
-
     # ── Otros blue-chips ──────────────────────────────────────────────
     "BA (Boeing)": "BA",
     "JPM": "JPM",
     "XOM": "XOM",
     "CVX": "CVX",
     "MOH (Molina Healthcare)": "MOH",
-}
+    }
 
     selected_asset = st.selectbox("Activo", list(ASSETS.keys()))
     ticker = ASSETS[selected_asset]
