@@ -170,13 +170,75 @@ with col_time:
 with st.sidebar:
     st.markdown("### 🎛️ Parámetros")
 
-    ASSETS = {
-        "EUR/USD": "C:EURUSD", "GBP/USD": "C:GBPUSD",
-        "USD/JPY": "C:USDJPY", "Oro (XAU/USD)": "C:XAUUSD",
-        "Plata (XAG/USD)": "C:XAGUSD", "SPY (S&P 500)": "SPY",
-        "BTC/USD": "X:BTCUSD", "ETH/USD": "X:ETHUSD",
-        "USO (Petróleo)": "USO", "QQQ (Nasdaq)": "QQQ",
-    }
+ASSETS = {
+    # ── FX ────────────────────────────────────────────────────────────
+    "EUR/USD": "C:EURUSD",
+    "GBP/USD": "C:GBPUSD",
+    "USD/JPY": "C:USDJPY",
+    "AUD/USD": "C:AUDUSD",
+    "USD/CAD": "C:USDCAD",
+    "EUR/JPY": "C:EURJPY",
+    "GBP/JPY": "C:GBPJPY",
+    "USD/CHF": "C:USDCHF",
+    "EUR/GBP": "C:EURGBP",
+    "NZD/USD": "C:NZDUSD",
+
+    # ── Metales & Commodities ─────────────────────────────────────────
+    "Oro (XAU/USD)": "C:XAUUSD",
+    "Plata (XAG/USD)": "C:XAGUSD",
+    "GLD (Gold ETF)": "GLD",
+    "SLV (Silver ETF)": "SLV",
+    "USO (Petróleo)": "USO",
+    "BNO (Brent)": "BNO",
+    "UNG (Natural Gas)": "UNG",
+    "CPER (Copper)": "CPER",
+
+    # ── Índices & ETFs ────────────────────────────────────────────────
+    "SPY (S&P 500)": "SPY",
+    "QQQ (Nasdaq)": "QQQ",
+    "DIA (Dow Jones)": "DIA",
+    "IWM (Russell 2000)": "IWM",
+    "SPX Index": "I:SPX",
+    "NDX Index": "I:NDX",
+    "DJI Index": "I:DJI",
+    "VIX": "I:VIX",
+    "EWG (Alemania)": "EWG",
+    "EWQ (Francia)": "EWQ",
+    "EWP (España)": "EWP",
+    "FEZ (EuroStoxx 50)": "FEZ",
+    "TLT (Bonos 20y)": "TLT",
+
+    # ── High-beta Tech ────────────────────────────────────────────────
+    "NVDA": "NVDA",
+    "TSLA": "TSLA",
+    "AMD": "AMD",
+    "META": "META",
+    "AMZN": "AMZN",
+    "AAPL": "AAPL",
+    "GOOGL": "GOOGL",
+    "MSFT": "MSFT",
+    "AVGO": "AVGO",
+    "NFLX": "NFLX",
+    "PLTR": "PLTR",
+    "SMCI": "SMCI",
+    "ARM": "ARM",
+    "COIN": "COIN",
+
+    # ── Spanish / European ADRs ───────────────────────────────────────
+    "SAN (Santander)": "SAN",
+    "BBVA": "BBVA",
+    "TEF (Telefónica)": "TEF",
+    "IBDRY (Iberdrola)": "IBDRY",
+    "GRFS (Grifols)": "GRFS",
+
+    # ── Otros blue-chips ──────────────────────────────────────────────
+    "BA (Boeing)": "BA",
+    "JPM": "JPM",
+    "XOM": "XOM",
+    "CVX": "CVX",
+    "MOH (Molina Healthcare)": "MOH",
+}
+
     selected_asset = st.selectbox("Activo", list(ASSETS.keys()))
     ticker = ASSETS[selected_asset]
     days = st.slider("Días de histórico", 60, 730, 365)
