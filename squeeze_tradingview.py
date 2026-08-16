@@ -175,38 +175,24 @@ with st.sidebar:
     "EUR/USD": "C:EURUSD",
     "GBP/USD": "C:GBPUSD",
     "USD/JPY": "C:USDJPY",
-    "AUD/USD": "C:AUDUSD",
-    "EUR/JPY": "C:EURJPY",
 
     # Metales & Oil
     "Oro (XAU/USD)": "C:XAUUSD",
-    "Plata (XAG/USD)": "C:XAGUSD",
     "USO (Petróleo)": "USO",
-    "GLD (Gold ETF)": "GLD",
 
-    # Índices ETF
+    # Índice
     "SPY (S&P 500)": "SPY",
-    "QQQ (Nasdaq)": "QQQ",
-    "DIA (Dow Jones)": "DIA",
 
-    # High-beta Tech (los más negociados en turbos)
+    # High-beta Tech (máximo volumen turbos)
     "NVDA": "NVDA",
     "TSLA": "TSLA",
     "AMD": "AMD",
     "META": "META",
-    "AMZN": "AMZN",
-    "AAPL": "AAPL",
-    "MSFT": "MSFT",
-    "GOOGL": "GOOGL",
-
-    # Spanish ADRs
-    "SAN (Santander)": "SAN",
-    "BBVA": "BBVA",
-    "TEF (Telefónica)": "TEF",
+    "AVGO": "AVGO",          # ← mejor que QQQ (semis de alto volumen en turbos)
 
     # Otros
     "MOH (Molina Healthcare)": "MOH",
-    "JPM": "JPM",
+    "UNG (Natural Gas)": "UNG",   # ← diversificación commodity fuerte
 }
     selected_asset = st.selectbox("Activo", list(ASSETS.keys()))
     ticker = ASSETS[selected_asset]
