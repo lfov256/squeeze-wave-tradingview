@@ -173,26 +173,21 @@ with st.sidebar:
     ASSETS = {
     # FX
     "EUR/USD": "C:EURUSD",
-    "GBP/USD": "C:GBPUSD",
     "USD/JPY": "C:USDJPY",
 
     # Metales & Oil
     "Oro (XAU/USD)": "C:XAUUSD",
     "USO (Petróleo)": "USO",
-
     # Índice
     "SPY (S&P 500)": "SPY",
-
     # High-beta Tech (máximo volumen turbos)
     "NVDA": "NVDA",
     "TSLA": "TSLA",
     "AMD": "AMD",
     "META": "META",
-    "AVGO": "AVGO",          # ← mejor que QQQ (semis de alto volumen en turbos)
 
     # Otros
     "MOH (Molina Healthcare)": "MOH",
-    "UNG (Natural Gas)": "UNG",   # ← diversificación commodity fuerte
 }
     selected_asset = st.selectbox("Activo", list(ASSETS.keys()))
     ticker = ASSETS[selected_asset]
